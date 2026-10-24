@@ -20,7 +20,11 @@
 
 Developers lose time every time they come back to a project: what was I doing, which branch, what was half-finished, which fixes did I (or my agent) already try? Git shows commits, not context. Today most code is written by AI agents (Claude Code, Codex), so most of that context lives in agent sessions that nobody re-reads.
 
-**One-line pitch:** "It remembers what you were doing, so you don't have to — close your laptop mid-task, come back days later, and pick up in two minutes. Your AI agent picks up too."
+**Positioning (D11).** leftoff is **not** "memory for AI agents" — that space is taken (Claude Code session recap and auto memory, Codex Memories, claude-mem). Agent memory recalls *knowledge* when asked, inside one agent. leftoff tracks *unfinished state* — uncommitted work, unresolved errors, failing tests, abandoned attempts, and agents that claimed "done" when they weren't — across every project, every agent and the terminal, from ground truth (git, exit codes, test output), and tells the developer unprompted.
+
+**One-line pitch:** "Your agents say they're done. leftoff shows you what's actually left."
+
+**Interview answer to "Claude already has memory":** "Memory helps the agent recall what it learned. leftoff checks what's actually unfinished — from git, exit codes and test results, not an AI's summary — across every project and agent. Memory tells you what happened; leftoff tells you what's still open."
 
 **Example the product must nail:** Rahul builds a "forgot password" feature with Claude Code on Tuesday evening, hits `SMTP connection refused`, the agent tries two fixes that fail, he logs off with uncommitted work. Wednesday morning, opening a terminal in the repo prints:
 
@@ -61,6 +65,9 @@ And when he starts a new Claude Code session, the agent receives the same brief 
 | D8 | Architecture | Event-driven, **no daemon**, TypeScript. |
 | D9 | Storage | SQLite (embedded, single file, nothing to run). Behind a storage interface so a server DB could be added later. Postgres/MongoDB rejected: they require a running server on every user's laptop. |
 | D10 | Quality bar | It must not break the developer's workflow. Failures degrade gracefully and are visible in `leftoff doctor`. |
+| D11 | Positioning | A **loose-ends tracker for developers who work with AI agents**, built for the human, not the agent. Headline features: open loops in the brief, a cross-project loose-ends view (`leftoff` with no arguments), and "agent claimed done vs. actually done" detection — all deterministic. Handing the brief to a new Claude Code session stays, as a secondary feature. |
+| D12 | Release gate | **Dogfood before public release.** The owner uses leftoff daily on real projects and a small private beta tries it; release happens only when the exit criteria in Task 17 are met. |
+| D13 | Shipping | **No Docker.** leftoff must run on the host to read the user's shell, git repos and agent logs; a container would isolate it from all three. Shipped as an npm global package plus a Claude Code plugin. Docker is used only as a clean Linux test machine. |
 
 ## 1.3 Decisions made while writing this plan (product owner: review these)
 
@@ -142,25 +149,48 @@ interface BriefFacts {
   lastIntent: string | null;           // last user prompt to an agent, ≤ 300 chars
   lastAgentMessage: string | null;     // ≤ 300 chars
   openProblems: OpenProblem[];
+  claimedDone: ClaimedDone | null;     // agent said "done" but ground truth disagrees
   notes: string[];
   nextStep: string | null;
   sources: { name: Source; status: 'ok' | 'not_found' | 'error'; detail?: string }[];
 }
 interface OpenProblem { error: string; source: Source; firstSeen: string; attempts: string[] }
+interface ClaimedDone { source: Source; message: string; at: string; contradictions: string[] }
+interface LooseEnds {          // one project's entry in the cross-project view
+  project: { root: string; name: string };
+  branch: string | null;
+  lastActiveAt: string;
+  stale: boolean;              // has uncommitted files and last activity ≥ looseEnds.staleDays ago
+  claimedDone: ClaimedDone | null;
+  openProblems: OpenProblem[];
+  uncommittedCount: number;
+}
 ```
 
 Rules:
 - **Window:** the most recent work session for the project; if it has fewer than 3 events, include the previous session too.
 - **Open problem:** a `command_failed` / `tool_error` / `test_failed` event whose normalized command (whitespace collapsed, leading env assignments removed) is **not** followed later in the window by a successful `command` with the same normalized command. `attempts` = summaries of `file_edit` and `command` events after the failure, newest last, max 5, deduplicated.
-- **Next step (first match wins):** newest note starting with `next:` → `Resolve: <newest open problem error>` → `Finish and commit changes in <first unfinished file>` (+ ` and N more`) → `Continue: <lastIntent>` → `null`.
+- **Next step (first match wins):** newest note starting with `next:` → `Verify: <first claimedDone contradiction>` → `Resolve: <newest open problem error>` → `Finish and commit changes in <first unfinished file>` (+ ` and N more`) → `Continue: <lastIntent>` → `null`.
+- **Claimed done:** take the newest `agent_message` in the window whose text matches `/\b(done|completed?|finished|fixed|implemented|all (tests )?pass(ing|ed)?|ready (for review|to merge))\b/i` and does not match `/\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i`. Contradictions (each a short string): every open problem from the same agent session or later (`"<error> (still failing)"`); `"<N> uncommitted files"` if there are uncommitted files and no `commit` event after the message. `claimedDone` is `null` when there is no matching message or no contradiction.
+- **Loose ends (cross-project):** for each project with events in the last `retentionDays`, build facts with stored events plus live git state, and include it if it has a claimedDone, an open problem, or uncommitted files. Order: claimedDone first, then by number of open problems (desc), then stale, then oldest `lastActiveAt`. At most `looseEnds.maxProjects` (default **20**) projects are checked, most recently active first.
 - **Polish never replaces facts.** A polished paragraph is shown above the facts; facts are always shown.
 
 ## 1.8 Output formats (exact copy)
 
-- Terminal brief: headings exactly `Where you left off`, `Done`, `Unfinished`, `Open problems`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error). Empty sections are omitted. Respect `NO_COLOR`.
+- Terminal brief: headings exactly `Where you left off`, `Agent said done, but`, `Done`, `Unfinished`, `Open problems`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error). Empty sections are omitted. Respect `NO_COLOR`.
 - Auto brief (terminal open): first line `Where you left off — <name> (<branch>) · last active <gap>`, at most 6 more lines (unfinished count, top open problem, next step), last line `Run \`leftoff resume\` for details`.
 - Agent context (Claude Code `additionalContext`): Markdown starting with `## Previous session in this project (from leftoff)`, ending with the line `This is an automatic summary of earlier work. Verify against the code before relying on it.` Max **4000** characters.
 - Standup: three sections `Yesterday:`, `Today:`, `Blockers:` (`Blockers: none` if empty).
+- Loose ends (`leftoff` / `leftoff loops`): first line `Loose ends across <N> projects` (or `No loose ends. Everything is committed and passing.`), then per project:
+```
+myapp (feature/forgot-password) · 14h ago
+  ! Agent said "All tests pass" — 1 test still failing
+  ✗ SMTP connection refused (2 attempts)
+  • 1 uncommitted file
+api-server (main) · 4d ago · stale
+  • 3 uncommitted files
+```
+  Last line: `Run \`leftoff resume\` inside a project for details`.
 
 ## 1.9 AI polish
 
@@ -177,6 +207,7 @@ Rules:
 | `leftoff setup` | Interactive: detect shells and agents, install shell hook block into rc files, install the Claude Code plugin, choose polish provider. Idempotent. |
 | `leftoff resume [--project <path>] [--json\|--md] [--polish]` | Full brief for the project of cwd (or `--project`). |
 | `leftoff standup [--since <yesterday\|today\|Nh\|YYYY-MM-DD>] [--all] [--copy]` | Standup text; `--all` covers every project; `--copy` uses pbcopy / wl-copy / xclip if present. |
+| `leftoff` (no arguments) / `leftoff loops [--json]` | **Loose ends across all projects** (§1.7, §1.8). The headline command. |
 | `leftoff note "<text>"` | Add a note to the current project. |
 | `leftoff status` | Tracked projects, last ingest per collector, event counts. |
 | `leftoff doctor` | Health checks with a fix hint for each failure. Exit code 1 if any check fails. |
@@ -199,6 +230,7 @@ Rules:
 - `leftoff resume` p95 < 300 ms with no new data to ingest; < 1.5 s with 50 MB of new agent logs.
 - Shell hook adds < 5 ms per command.
 - Hooks never make Claude Code wait more than their budget and never surface an error to the agent.
+- `leftoff loops` < 1.5 s with 20 tracked projects.
 - The brief for the §1.1 scenario contains: the branch, the uncommitted file, the open problem with both attempts, and next step `Resolve: SMTP connection refused`.
 
 ---
@@ -210,7 +242,7 @@ Rules:
 - Node `>=22`; `"type": "module"`; TypeScript `strict: true`; target ES2022.
 - Runtime dependencies limited to: `better-sqlite3`, `commander`, `fzstd`. Anything else needs a written reason in the PR.
 - Data dir `~/.leftoff` (env `LEFTOFF_HOME` overrides); dir mode `0o700`, files `0o600`.
-- Defaults: `sessionGapMinutes 45`, `autoBrief.gapHours 4`, `retentionDays 30`, `ingest.maxBytesPerFilePerRun 52428800`, `codex.maxCompressedMb 200`, `polish.provider "off"`.
+- Defaults: `sessionGapMinutes 45`, `autoBrief.gapHours 4`, `retentionDays 30`, `ingest.maxBytesPerFilePerRun 52428800`, `codex.maxCompressedMb 200`, `polish.provider "off"`, `looseEnds.staleDays 3`, `looseEnds.maxProjects 20`.
 - Limits: event `summary` ≤ 300 chars, `data` ≤ 4096 bytes serialized, agent context ≤ 4000 chars, polish input ≤ 8000 chars, polish output ≤ 1200 chars.
 - Hook budgets: session-start 2000 ms, stop/session-end 500 ms, `brief --auto` 300 ms. Hooks always exit 0.
 - Env flags: `LEFTOFF_INTERNAL=1` (skip all hooks), `LEFTOFF_QUIET=1` (no auto brief), `NO_COLOR` respected.
@@ -225,6 +257,7 @@ Rules:
 3. **Secrets in commands and transcripts** — tokens, passwords, private keys typed in commands or echoed in tool output; expected: never stored unredacted; raw shell log bytes removed after ingest; leading-space commands never recorded. Tests in Tasks 3, 4, 8.
 4. **Unusual project layouts** — non-git folder, repo with no commits, detached HEAD, nested repo, git worktree, path with spaces; expected: correct project root and a brief without crashing. Tests in Tasks 3, 5.
 5. **Concurrency** — two Claude sessions and the shell writing while `resume` reads; two `SessionEnd`s starting summarize at once; expected: no "database is locked" crash, one summarize runs. Tests in Tasks 2, 12.
+6. **False "claimed done" alarms** — agent messages like "I haven't finished", "done reading the file, now editing", or a claim followed by a fix and a passing re-run; expected: no flag when ground truth agrees, so developers don't learn to ignore it. Tests in Task 9.
 
 ---
 
@@ -646,6 +679,7 @@ test('ingest while another process holds a write transaction waits instead of th
   - `buildFacts(root: string, deps: { repo: Repo; config: Config; report: IngestReport | null; working: ReturnType<typeof readWorkingState> | null; now: Date }): BriefFacts`
   - `findOpenProblems(events: WorkEvent[]): OpenProblem[]`
   - `chooseNextStep(f: Omit<BriefFacts, 'nextStep'>): string | null`
+  - `detectClaimedDone(events: WorkEvent[], openProblems: OpenProblem[], uncommittedCount: number): ClaimedDone | null`
   - `factsHash(f: BriefFacts): string` (sha1 of JSON excluding `lastActiveAt` and `sources`)
 
 - [ ] **Step 1: Write failing tests** — build the §1.1 Rahul scenario as an event list helper `rahulEvents()` used here and in Task 16.
@@ -660,9 +694,17 @@ test('open problem: failure without later success', () => {
   expect(p[0].attempts).toEqual(['changed port to 587', 'disabled TLS']); // summaries from fixture helper
 });
 test('failure followed by same command succeeding is resolved', ...);
+test('claimed done: "All tests pass" then a test failure → flagged with "(still failing)"', ...);
+test('claimed done: "Done!" with uncommitted files and no later commit → "2 uncommitted files"', ...);
+test('claimed done: claim, then failure, then fix and passing re-run → null', ...);
+test.each(["I haven't finished the migration", 'not done yet', "it's still not passing"])
+  ('claimed done: negation %j is never a claim', ...);
+test('claimed done: "Done reading the file, now editing" with nothing contradicting → null', ...);
+test('claimed done: no agent message → null', ...);
 test('attempts capped at 5 and deduplicated', ...);
 test.each([
   ['note next: wins', { notes: ['next: try OAuth app password'] }, 'try OAuth app password'],
+  ['claimed done next', { claimedDone: cd(['1 test still failing']) }, 'Verify: 1 test still failing'],
   ['open problem next', { openProblems: [op('SMTP connection refused')] }, 'Resolve: SMTP connection refused'],
   ['unfinished files', { unfinished: files(['a.py', 'b.py', 'c.py']) }, 'Finish and commit changes in a.py and 2 more'],
   ['last intent', { lastIntent: 'add rate limiting' }, 'Continue: add rate limiting'],
@@ -679,7 +721,7 @@ test('factsHash ignores lastActiveAt', ...);
 ```
 
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** `npm run check` → PASS.
-- [ ] **Step 5: Commit** `git commit -m "feat(brief): sessions, open problems, next step, facts"`
+- [ ] **Step 5: Commit** `git commit -m "feat(brief): sessions, open problems, claimed-done, next step, facts"`
 
 ---
 
@@ -707,6 +749,7 @@ test('terminal render matches golden for rahul scenario', () => {
   expect(renderTerminal(rahulFacts(), null, { color: false })).toMatchFileSnapshot('golden/rahul.txt');
 });
 test('empty sections are omitted', ...);
+test('"Agent said done, but" section renders first with each contradiction', ...);
 test('NO_COLOR disables ANSI', ...);
 test('agent context starts and ends with exact lines and is ≤ 4000 chars even with 200 files', ...);
 test('json render is valid JSON with facts and polished', ...);
@@ -724,17 +767,20 @@ Golden file `tests/render/golden/rahul.txt` must equal the brief in spec §1.1.
 
 ---
 
-### Task 11: Standup command
+### Task 11: Standup and loose-ends commands
 
 **Files:**
-- Create: `src/render/standup.ts`, `src/cli/commands/standup.ts`
-- Test: `tests/render/standup.test.ts`, `tests/cli/standup.test.ts`
+- Create: `src/render/standup.ts`, `src/cli/commands/standup.ts`, `src/brief/loose-ends.ts`, `src/render/loose-ends.ts`, `src/cli/commands/loops.ts`; wire bare `leftoff` to `loops` in `src/cli/index.ts`
+- Test: `tests/render/standup.test.ts`, `tests/cli/standup.test.ts`, `tests/brief/loose-ends.test.ts`, `tests/cli/loops.test.ts`
 
 **Interfaces:**
 - Produces:
   - `buildStandup(input: { factsByProject: BriefFacts[]; eventsSince: WorkEvent[] }): { yesterday: string[]; today: string[]; blockers: string[] }`
   - `renderStandup(s): string` (exact headings §1.8)
   - `runStandup(opts: { cwd: string; since?: string; all: boolean; copy: boolean }): Promise<{ output: string; exitCode: number }>`
+  - `buildLooseEnds(deps: { repo: Repo; config: Config; now: Date; readWorking: typeof readWorkingState }): LooseEnds[]` (rules §1.7)
+  - `renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: boolean }): string` (exact format §1.8)
+  - `runLoops(opts: { json: boolean }): Promise<{ output: string; exitCode: number }>` — ingest (budget 1200 ms) then build; total budget 1500 ms; a project whose git read times out is shown with `? git status unavailable` instead of being dropped.
 
 Default `since` = start of previous local day when today is Mon–Fri and previous working day is Friday on Mondays. Yesterday = commit subjects + "Worked on <files> with <agent>" per project; Today = next steps; Blockers = open problems. Prefix items with project name when `--all`. `--copy` tries `pbcopy`, `wl-copy`, `xclip -selection clipboard` in order; prints `(copied)` or `(clipboard tool not found)`.
 
@@ -754,10 +800,15 @@ Blockers:
 test('Monday since covers Friday', ...);
 test('no activity → Blockers: none and a friendly Yesterday line', ...);
 test('--all prefixes project names', ...);
+test('loose ends: ordering is claimedDone, open problems, stale, oldest', ...);
+test('loose ends: clean projects are omitted; none left → "No loose ends." line', ...);
+test('loose ends: render matches golden', () => expect(renderLooseEnds(sample(), now, { color: false })).toMatchFileSnapshot('golden/loose-ends.txt'));
+test('loose ends: only maxProjects most recent projects are checked', ...);
+test('bare `leftoff` runs loops', ...);
 ```
 
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** `npm run check` → PASS.
-- [ ] **Step 5: Commit** `git commit -m "feat(cli): standup command"`
+- [ ] **Step 5: Commit** `git commit -m "feat(cli): standup and loose-ends commands"`
 
 ---
 
@@ -931,6 +982,7 @@ test('rahul scenario end to end', () => {
 });
 test('hook session-start returns context for the same scenario', ...);
 test('standup for the same scenario matches Task 11 golden', ...);
+test('bare `leftoff` lists the scenario project with its open problem and uncommitted file', ...);
 test('a collector source missing entirely (no ~/.codex) still gives a brief with "codex –"', ...);
 test('secrets planted in fixture never appear in the sqlite file', () => {
   expect(readFileSync(join(home, 'leftoff.db')).includes('hunter2')).toBe(false);
@@ -948,23 +1000,47 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 
 ---
 
-### Task 17: Packaging, docs and release
+### Task 17: Dogfooding and hardening (private use before release)
+
+**Goal:** prove leftoff works on real projects before anyone else depends on it (D12). No new features in this task; only fixes, each with a regression test in the owning module.
+
+**Files:**
+- Create: `docs/dogfood-log.md`, `docs/dogfood-checklist.md`
+- Modify: whatever modules the bugs live in (plus their tests)
+
+- [ ] **Step 1: Install locally (owner approves).** `npm run build && npm link` makes the `leftoff` command run the local build. The owner runs `leftoff setup` on their real machine, choosing their shells and the Claude Code plugin. Record the exact steps and any friction in `docs/dogfood-log.md`.
+- [ ] **Step 2: Daily use for at least 7 days** on at least 2 real projects with real Claude Code (and Codex if enabled) work. Each day the owner adds an entry to `docs/dogfood-log.md`: date; what `leftoff`, the auto brief and `leftoff resume` showed; correct / wrong / missing items; false "claimed done" alarms; anything slow; any error output.
+- [ ] **Step 3: Daily health checks** (put these commands in `docs/dogfood-checklist.md`): `leftoff doctor` exits 0; `~/.leftoff/logs/leftoff.log` has no new errors; `time leftoff resume` and `time leftoff` are within §1.12 budgets; a secret scan of the database finds nothing (`sqlite3 ~/.leftoff/leftoff.db .dump | grep -E "ghp_|sk-|AKIA|BEGIN .*PRIVATE KEY|password="` returns no lines).
+- [ ] **Step 4: Fix loop.** For every problem: reproduce it in a failing test in the owning module, fix it, run `npm run check`, commit `fix(<module>): <what>`, rebuild (`npm run build`; `npm link` picks it up), and note the fix in the log.
+- [ ] **Step 5: Private beta (owner publishes).** Bump to `1.0.0-beta.1`; the owner runs `npm publish --tag beta` with their own login. Two or three trusted developers install with `npm i -g @leftoff-dev/cli@beta && leftoff setup` and report problems as GitHub issues. The `latest` tag stays on the placeholder, so normal installs are unaffected.
+- [ ] **Step 6: Exit criteria — all must hold before Task 18:**
+  - 7 consecutive days with no crash, no hook error shown in Claude Code, and no error in `leftoff.log`
+  - the brief judged correct on at least 90% of logged days, and no false "claimed done" alarm in the last 3 days
+  - secret scan clean every day
+  - all §1.12 performance budgets met on the owner's real data
+  - every bug found has a regression test and is fixed; every beta issue is fixed or explicitly deferred in `CHANGELOG.md`
+  - `leftoff uninstall` tested once on the owner's machine and on a beta tester's, then reinstalled
+- [ ] **Step 7: Commit** `git commit -m "chore: dogfooding log and fixes"`.
+
+---
+
+### Task 18: Packaging, docs and release
 
 **Files:**
 - Create: `README.md`, `CONTRIBUTING.md`, `LICENSE` (MIT), `CHANGELOG.md`, `docs/adding-a-collector.md`, `.github/workflows/release.yml`, `demo/demo.tape`
 - Modify: `package.json` (final name, `files`, `repository`, `keywords`), `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (repo URLs)
 
 - [ ] **Step 1: Confirm package identity.** `package.json` `name` is `@leftoff-dev/cli`, `bin` is `{"leftoff": "dist/cli.js"}`, `publishConfig.access` is `public`, `repository` points at `github.com/GITHUBTANMAY2003/leftoff`. Bump from the placeholder `0.0.1` to `1.0.0`. Plugin and marketplace manifests use the same repo URL.
-- [ ] **Step 2: README** — the one-line pitch, a demo GIF (record with `vhs demo/demo.tape` showing: close terminal → reopen → auto brief → `leftoff standup`), install (`npm i -g @leftoff-dev/cli && leftoff setup`), what is recorded and where, privacy section (local only, redaction, `forget`, polish providers that leave the machine), commands table from spec §1.10, troubleshooting = `leftoff doctor`, uninstall.
+- [ ] **Step 2: README** — the one-line pitch and positioning from §1.1, a short "How leftoff differs from agent memory" section (Claude Code recap/auto memory, Codex Memories, claude-mem: they recall knowledge for the agent; leftoff tracks unfinished state for you, from ground truth, across tools), a demo GIF (record with `vhs demo/demo.tape` showing: close terminal → reopen → auto brief → `leftoff standup`), install (`npm i -g @leftoff-dev/cli && leftoff setup`), what is recorded and where, privacy section (local only, redaction, `forget`, polish providers that leave the machine), commands table from spec §1.10, troubleshooting = `leftoff doctor`, uninstall.
 - [ ] **Step 3: CONTRIBUTING + docs/adding-a-collector.md** — the `Collector` interface, fixture capture procedure from Task 6, test checklist (malformed lines, partial lines, dedupe, budget).
-- [ ] **Step 4: release.yml** — on tag `v*`: `npm ci && npm run check && npm run build && npm publish --provenance --access public` (needs `NPM_TOKEN` secret), create a GitHub Release with the CHANGELOG section.
-- [ ] **Step 5: Fresh-machine check** — in a clean Docker `node:22` container and on a macOS machine: install from the packed tarball (`npm pack`), run `leftoff setup`, use Claude Code for 5 minutes, open a new terminal after setting `autoBrief.gapHours 0`, confirm the brief appears and `leftoff doctor` is all green. Record results in the PR.
-- [ ] **Step 6: Commit** `git commit -m "docs: readme, contributing, release workflow"` and tag `v1.0.0`.
+- [ ] **Step 4: release.yml** — on tag `v*`: `npm ci && npm run check && npm run build`, then publish using **npm trusted publishing** (GitHub Actions OIDC, `id-token: write` permission, `npm publish --provenance --access public`; no stored token), and create a GitHub Release with the CHANGELOG section. The owner configures the trusted publisher on npmjs.com. Until that is set up, the owner publishes manually with `npm publish --access public`.
+- [ ] **Step 5: Fresh-machine check** (Docker is only a clean Linux test machine here, not a shipping method — D13) — in a clean Docker `node:22` container and on a macOS machine: install from the packed tarball (`npm pack`), run `leftoff setup`, use Claude Code for 5 minutes, open a new terminal after setting `autoBrief.gapHours 0`, confirm the brief appears and `leftoff doctor` is all green. Record results in the PR.
+- [ ] **Step 6: Commit** `git commit -m "docs: readme, contributing, release workflow"`. The owner creates and pushes tag `v1.0.0` and publishes.
 
 ---
 
 ## Self-review notes
 
-- Spec coverage: §1.2 D1–D10 and §1.3 P1–P12 each map to tasks (D3/D4 → 4–7; D6 → 12; D7 → 10, 13, 14; D9 → 2; D10 → 8, 13, 15; P7 → 14; P10 → 3, 4, 12, 15; P11 → 10; P12 → 13, 17).
-- Interfaces: `Collector.collect` returns `{ events, pendingCursors, warnings }` everywhere (Tasks 4–8). `BriefFacts`/`OpenProblem` defined once in §1.7 and used by Tasks 9–14.
+- Spec coverage: §1.2 D1–D13 and §1.3 P1–P12 each map to tasks (D3/D4 → 4–7; D6 → 12; D7 → 10, 13, 14; D9 → 2; D10 → 8, 13, 15; D11 → 9, 10, 11, 18; D12 → 17; D13 → 18; P7 → 14; P10 → 3, 4, 12, 15; P11 → 10; P12 → 13, 18).
+- Interfaces: `Collector.collect` returns `{ events, pendingCursors, warnings }` everywhere (Tasks 4–8). `BriefFacts`/`OpenProblem`/`ClaimedDone`/`LooseEnds` defined once in §1.7 and used by Tasks 9–14.
 - Review Focus items each have a named test in their owning task.
