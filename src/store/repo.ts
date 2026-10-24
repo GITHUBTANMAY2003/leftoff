@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { logError } from '../core/logger.ts';
 import type { EventKind, Source, WorkEvent } from '../model/event.ts';
 
 export interface StoredBrief {
@@ -47,17 +48,35 @@ interface EventRow {
 
 const EVENT_COLUMNS = 'source, kind, project_root, ts, session_ref, summary, data, dedupe_key';
 
-function toEvent(row: EventRow): WorkEvent {
-  return {
-    source: row.source as Source,
-    kind: row.kind as EventKind,
-    projectRoot: row.project_root,
-    ts: row.ts,
-    sessionRef: row.session_ref,
-    summary: row.summary,
-    data: JSON.parse(row.data) as Record<string, unknown>,
-    dedupeKey: row.dedupe_key,
-  };
+// A row whose data is not valid JSON (only possible if the file was edited by
+// hand) is skipped, with one log line per read, so one bad row can't break a brief.
+function toEvents(rows: EventRow[]): WorkEvent[] {
+  const events: WorkEvent[] = [];
+  const skipped: string[] = [];
+  for (const row of rows) {
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(row.data) as Record<string, unknown>;
+    } catch {
+      skipped.push(row.dedupe_key);
+      continue;
+    }
+    events.push({
+      source: row.source as Source,
+      kind: row.kind as EventKind,
+      projectRoot: row.project_root,
+      ts: row.ts,
+      sessionRef: row.session_ref,
+      summary: row.summary,
+      data,
+      dedupeKey: row.dedupe_key,
+    });
+  }
+  if (skipped.length > 0) {
+    const shown = skipped.slice(0, 5).join(', ') + (skipped.length > 5 ? ', …' : '');
+    logError('store', `skipped ${skipped.length} events with unreadable data: ${shown}`);
+  }
+  return events;
 }
 
 const now = () => new Date().toISOString();
@@ -144,8 +163,8 @@ export function createRepo(db: Database): Repo {
 
   return {
     insertEvents: (events) => insertAll(events),
-    eventsForProject: (root, sinceIso) => forProject.all(root, sinceIso).map(toEvent),
-    eventsSince: (sinceIso) => since.all(sinceIso).map(toEvent),
+    eventsForProject: (root, sinceIso) => toEvents(forProject.all(root, sinceIso)),
+    eventsSince: (sinceIso) => toEvents(since.all(sinceIso)),
     projects: () => projects.all(),
     lastActivity: (root) => lastActivity.get(root)?.ts ?? null,
     getCursor: (collector, key) => getCursor.get(collector, key)?.value ?? null,

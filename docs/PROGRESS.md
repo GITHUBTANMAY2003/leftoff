@@ -9,8 +9,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 |---|---|---|---|---|
 | 0 | Plan review ([report](reports/task-00-plan-review.md)) | done | `76e3c17` | — (decisions applied to the plan in `11c35e4`) |
 | 1 | Project scaffold, paths, config, logger ([report](reports/task-01.md)) | done | `f52dd1e` | None in scope. Clarifications: 25 tests beyond the plan's list; `setConfigValue` also saves; `package.json` gets `description` and `license` early |
-| 2 | SQLite store and repository ([report](reports/task-02.md)) | done | (filled in by Task 3) | `ON CONFLICT(dedupe_key) DO NOTHING` instead of `INSERT OR IGNORE` (which hid NOT NULL errors); WAL switch retried on SQLITE_BUSY (race found by tests); owner-requested integer rule for count config keys folded in |
-| 3 | Event model, redaction, project resolution | not started | | |
+| 2 | SQLite store and repository ([report](reports/task-02.md)) | done | `5a475af` | `ON CONFLICT(dedupe_key) DO NOTHING` instead of `INSERT OR IGNORE` (which hid NOT NULL errors); WAL switch retried on SQLITE_BUSY (race found by tests); owner-requested integer rule for count config keys folded in |
+| 3 | Event model, redaction, project resolution ([report](reports/task-03.md)) | done | (filled in by Task 4) | `pass`/`auth` match only as name segments (avoids redacting `--author`, `passport`) — awaiting owner confirmation; `redactDeep` also redacts values under secret-named keys. Fold-ins: unreadable event rows skipped; plan text lines |
 | 4 | Shell hook scripts and shell collector | not started | | |
 | 5 | Git collector | not started | | |
 | 6 | Incremental JSONL reader and Claude Code collector | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 3: Event model, redaction, project resolution.** Waiting for the owner's `continue` and the answer on whether `forget` keeps cursors (Task 2 report §9.1).
+**Task 4: Shell hook scripts and shell collector.** Waiting for the owner's `continue` and confirmation of Task 3 deviation §8.1.

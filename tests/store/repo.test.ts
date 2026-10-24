@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, expect, test } from 'vitest';
+import { readRecentErrors } from '../../src/core/logger.ts';
 import { openDb } from '../../src/store/db.ts';
 import { createRepo, type Repo } from '../../src/store/repo.ts';
 import { ev } from './helpers.ts';
@@ -38,6 +39,30 @@ test('insertEvents is all-or-nothing: one bad event inserts none', () => {
   const bad = { ...ev('bad'), summary: null } as unknown as ReturnType<typeof ev>;
   expect(() => repo.insertEvents([ev('ok'), bad])).toThrow();
   expect(repo.eventsSince(EPOCH)).toEqual([]);
+});
+
+test('rows whose data JSON cannot be parsed are skipped and logged once per read', () => {
+  repo.insertEvents([ev('good', { ts: '2026-10-20T10:00:00.000Z' })]);
+  const raw = db.prepare(
+    `INSERT INTO events(source, kind, project_root, ts, session_ref, summary, data, dedupe_key)
+     VALUES ('shell', 'command', '/p', ?, NULL, 's', ?, ?)`,
+  );
+  raw.run('2026-10-20T11:00:00.000Z', '{broken', 'bad-1');
+  raw.run('2026-10-20T12:00:00.000Z', 'not json', 'bad-2');
+
+  expect(repo.eventsForProject('/p', EPOCH).map((e) => e.dedupeKey)).toEqual(['good']);
+  expect(readRecentErrors(10)).toHaveLength(1);
+  expect(readRecentErrors(1)[0]).toMatch(/skipped 2 events.*bad-1/);
+
+  expect(repo.eventsSince(EPOCH).map((e) => e.dedupeKey)).toEqual(['good']);
+  expect(readRecentErrors(10)).toHaveLength(2);
+});
+
+test('a read with only valid rows logs nothing', () => {
+  repo.insertEvents([ev('a'), ev('b')]);
+  repo.eventsForProject('/p', EPOCH);
+  repo.eventsSince(EPOCH);
+  expect(readRecentErrors(10)).toEqual([]);
 });
 
 test('events round-trip with all fields, data as an object', () => {

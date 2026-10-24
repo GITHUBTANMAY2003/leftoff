@@ -380,4 +380,33 @@ Counts: 42 core tests (Task 1's 34 + 8 integer tests) + 27 store tests = 69. The
 
 ## 10. Commit
 
-To be filled in by Task 3's commit (B11). The commit message is `feat(store): sqlite repo with migrations, locks, corruption recovery`.
+Commit `5a475af`, message `feat(store): sqlite repo with migrations, locks, corruption recovery`. CI run 40093314885 was green on all 6 jobs (ubuntu/macos × Node 22/24/26).
+
+```
+$ git show --stat --format='%h %s' 5a475af
+5a475af feat(store): sqlite repo with migrations, locks, corruption recovery
+
+ docs/PROGRESS.md                 |   6 +-
+ docs/reports/task-01.md          |  33 +++-
+ docs/reports/task-02.md          | 383 +++++++++++++++++++++++++++++++++++++++
+ package-lock.json                |  33 ++++
+ package.json                     |   2 +
+ src/core/config.ts               |  18 +-
+ src/model/event.ts               |  29 +++
+ src/store/db.ts                  |  73 ++++++++
+ src/store/migrations.ts          |  37 ++++
+ src/store/repo.ts                | 175 ++++++++++++++++++
+ tests/core/config.test.ts        |  28 +++
+ tests/store/concurrent-writer.ts |  22 +++
+ tests/store/db.test.ts           | 119 ++++++++++++
+ tests/store/helpers.ts           |  15 ++
+ tests/store/repo.test.ts         | 191 +++++++++++++++++++
+ 15 files changed, 1156 insertions(+), 8 deletions(-)
+```
+
+Owner's answers to §9:
+1. Keep cursors in `forget`; docs in Tasks 15 and 18 must say read positions are kept.
+2. Fine.
+3. CI green (verified with `gh`).
+4. Skip unreadable rows: done in Task 3.
+5. Plan lines: added in Task 3's commit.

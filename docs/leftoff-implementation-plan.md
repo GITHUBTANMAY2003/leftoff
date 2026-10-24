@@ -235,7 +235,7 @@ api-server (main) · 4d ago · stale
 | `leftoff note "<text>"` | Add a note to the current project. |
 | `leftoff status` | Tracked projects, last ingest per collector, event counts. |
 | `leftoff doctor` | Health checks with a fix hint for each failure. Exit code 1 if any check fails. |
-| `leftoff forget (--project <path> \| --all)` | Delete stored data (asks for confirmation unless `--yes`). |
+| `leftoff forget (--project <path> \| --all)` | Delete stored data (asks for confirmation unless `--yes`): all events, cached briefs and shown markers. Read positions (cursors: file paths and offsets, no content) are kept so forgotten history isn't re-imported. |
 | `leftoff config (get <key> \| set <key> <value> \| list)` | Read/write config. |
 | `leftoff uninstall` | Remove rc blocks, print the plugin uninstall command, optionally delete data. |
 | hidden: `leftoff hook <claude-session-start\|claude-stop\|claude-session-end>`, `leftoff brief --auto`, `leftoff internal summarize --project <path>`, `leftoff internal ingest` | Used by hooks and background jobs. |
@@ -364,7 +364,7 @@ Config shape and defaults (R-B9):
 }
 ```
 
-`setConfigValue` parses list keys (`ignore.projects`, `ignore.commands`, `polish.enabled`) as comma-separated values (items trimmed; `""` = empty list), numbers and booleans strictly, nullable strings with `""` = `null`.
+`setConfigValue` parses list keys (`ignore.projects`, `ignore.commands`, `polish.enabled`) as comma-separated values (items trimmed; `""` = empty list), numbers and booleans strictly, nullable strings with `""` = `null`. Count-type keys (`retentionDays`, `looseEnds.maxProjects`, `ingest.maxBytesPerFilePerRun`, `codex.maxCompressedMb`) must be integers ≥ 0 — `config set` rejects decimals and a decimal in `config.json` falls back to the default; durations (`autoBrief.gapHours`, `sessionGapMinutes`, `looseEnds.staleDays`) may be decimal (owner decision after Task 1).
 
 - [ ] **Step 1: Scaffold.** `package.json` with `"name": "@leftoff-dev/cli"`, `"bin": {"leftoff": "dist/cli.js"}`, `"publishConfig": {"access": "public"}`, `"engines": {"node": ">=22.12"}`, scripts `build`, `test`, `test:e2e`, `format`, `check` as in Global Constraints. `typescript` pinned to `~6.0.3`. `tsconfig.json` with the import flags from Global Constraints. `vitest.config.ts` with the `unit` and `e2e` projects (`test:e2e` passes with no e2e test files until Task 13 adds the first). CI workflow on `ubuntu-latest` and `macos-latest` × Node `22`, `24`, `26`: install zsh and fish, then `npm ci`, `npm run check`, `npm run build`, `npm run test:e2e`.
 
@@ -425,8 +425,8 @@ test('withBudget returns undefined after timeout', async () => {
 - Produces:
   - `openDb(file?: string): Database` — WAL, `busy_timeout=2000`, runs migrations, corruption recovery.
   - `interface Repo` and `createRepo(db): Repo` with:
-    - `insertEvents(events: WorkEvent[]): number` (INSERT OR IGNORE on `dedupe_key`; returns inserted count; one transaction)
-    - `eventsForProject(root: string, sinceIso: string): WorkEvent[]` (ts ascending)
+    - `insertEvents(events: WorkEvent[]): number` (`INSERT … ON CONFLICT(dedupe_key) DO NOTHING` — not `INSERT OR IGNORE`, which would also silently drop rows that violate NOT NULL; returns inserted count; one all-or-nothing transaction)
+    - `eventsForProject(root: string, sinceIso: string): WorkEvent[]` (ts ascending; a row whose `data` JSON can't be parsed is skipped, one log line per read, never throws — same for `eventsSince`)
     - `eventsSince(sinceIso: string): WorkEvent[]` (all projects)
     - `projects(): { root: string; lastTs: string; count: number }[]`
     - `lastActivity(root: string): string | null`
@@ -1054,6 +1054,7 @@ test('doctor fails when the shim is missing or points at a CLI that no longer ex
 test('doctor warns when copied shell scripts are from an older version', ...); // R-B8
 test('doctor exit code 1 when any check fails', ...);
 test('forget --project removes only that project', ...);
+test('forget output and --help say that read positions (file paths and offsets, no content) are kept', ...);
 test('config set/get/list round-trip and rejects unknown keys', ...);
 test('uninstall removes rc blocks and keeps data unless confirmed', ...);
 ```
@@ -1137,7 +1138,7 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 - Modify: `package.json` (final name, `files`, `repository`, `keywords`), `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (repo URLs)
 
 - [ ] **Step 1: Confirm package identity.** `package.json` `name` is `@leftoff-dev/cli`, `bin` is `{"leftoff": "dist/cli.js"}`, `publishConfig.access` is `public`, `repository` points at `github.com/GITHUBTANMAY2003/leftoff`. Bump from the placeholder `0.0.1` to `1.0.0`. Plugin and marketplace manifests use the same repo URL.
-- [ ] **Step 2: README** — the one-line pitch and positioning from §1.1, a short "How leftoff differs from agent memory" section (Claude Code recap/auto memory, Codex Memories, claude-mem: they recall knowledge for the agent; leftoff tracks unfinished state for you, from ground truth, across tools), a demo GIF (record with `vhs demo/demo.tape` showing: close terminal → reopen → auto brief → `leftoff standup`), install (`npm i -g @leftoff-dev/cli && leftoff setup`), what is recorded and where, privacy section (local only, redaction, `forget`, polish providers that leave the machine), commands table from spec §1.10, troubleshooting = `leftoff doctor`, uninstall.
+- [ ] **Step 2: README** — the one-line pitch and positioning from §1.1, a short "How leftoff differs from agent memory" section (Claude Code recap/auto memory, Codex Memories, claude-mem: they recall knowledge for the agent; leftoff tracks unfinished state for you, from ground truth, across tools), a demo GIF (record with `vhs demo/demo.tape` showing: close terminal → reopen → auto brief → `leftoff standup`), install (`npm i -g @leftoff-dev/cli && leftoff setup`), what is recorded and where, privacy section (local only, redaction, `forget` — removes all events and briefs but keeps read positions, i.e. file paths and offsets with no content, so forgotten history isn't re-imported — polish providers that leave the machine), commands table from spec §1.10, troubleshooting = `leftoff doctor`, uninstall.
 - [ ] **Step 3: CONTRIBUTING + docs/adding-a-collector.md** — the `Collector` interface, fixture capture procedure from Task 6, test checklist (malformed lines, partial lines, dedupe, budget).
 - [ ] **Step 4: release.yml** — on tag `v*`: `npm ci && npm run check && npm run build && npm run test:e2e`, then publish using **npm trusted publishing** (GitHub Actions OIDC, `id-token: write` permission, `npm publish --provenance --access public`; no stored token), and create a GitHub Release with the CHANGELOG section. The owner configures the trusted publisher on npmjs.com. Until that is set up, the owner publishes manually with `npm publish --access public`.
 - [ ] **Step 5: Fresh-machine check** (Docker is only a clean Linux test machine here, not a shipping method — D13) — in a clean Docker `node:22` container and on a macOS machine: install from the packed tarball (`npm pack`), run `leftoff setup`, use Claude Code for 5 minutes, open a new terminal after setting `autoBrief.gapHours 0`, confirm the brief appears and `leftoff doctor` is all green. Record results in the PR.
