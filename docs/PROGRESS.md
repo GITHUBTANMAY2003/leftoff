@@ -8,8 +8,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 | # | Task | Status | Commit | Deviations from plan |
 |---|---|---|---|---|
 | 0 | Plan review ([report](reports/task-00-plan-review.md)) | done | `76e3c17` | — (decisions applied to the plan in `11c35e4`) |
-| 1 | Project scaffold, paths, config, logger ([report](reports/task-01.md)) | done | (filled in by Task 2) | None in scope. Clarifications: 25 tests beyond the plan's list; `setConfigValue` also saves; `package.json` gets `description` and `license` early |
-| 2 | SQLite store and repository | not started | | |
+| 1 | Project scaffold, paths, config, logger ([report](reports/task-01.md)) | done | `f52dd1e` | None in scope. Clarifications: 25 tests beyond the plan's list; `setConfigValue` also saves; `package.json` gets `description` and `license` early |
+| 2 | SQLite store and repository ([report](reports/task-02.md)) | done | (filled in by Task 3) | `ON CONFLICT(dedupe_key) DO NOTHING` instead of `INSERT OR IGNORE` (which hid NOT NULL errors); WAL switch retried on SQLITE_BUSY (race found by tests); owner-requested integer rule for count config keys folded in |
 | 3 | Event model, redaction, project resolution | not started | | |
 | 4 | Shell hook scripts and shell collector | not started | | |
 | 5 | Git collector | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 2: SQLite store and repository.** Waiting for the owner's `continue`.
+**Task 3: Event model, redaction, project resolution.** Waiting for the owner's `continue` and the answer on whether `forget` keeps cursors (Task 2 report §9.1).

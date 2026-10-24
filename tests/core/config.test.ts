@@ -91,6 +91,34 @@ test('setConfigValue rejects negative numbers and accepts 0', () => {
   expect(setConfigValue('autoBrief.gapHours', '0').autoBrief.gapHours).toBe(0);
 });
 
+test.each([
+  'retentionDays',
+  'looseEnds.maxProjects',
+  'ingest.maxBytesPerFilePerRun',
+  'codex.maxCompressedMb',
+])('setConfigValue: count key %s accepts integers and rejects decimals', (key) => {
+  expect(getConfigValue(key)).toSatisfy(Number.isInteger);
+  expect(setConfigValue(key, '0')).toBeDefined();
+  expect(getConfigValue(key)).toBe(0);
+  expect(() => setConfigValue(key, '2.5')).toThrow(/integer/);
+});
+
+test.each(['autoBrief.gapHours', 'sessionGapMinutes', 'looseEnds.staleDays'])(
+  'setConfigValue: duration key %s accepts decimals',
+  (key) => {
+    setConfigValue(key, '0.5');
+    expect(getConfigValue(key)).toBe(0.5);
+  },
+);
+
+test('a decimal for a count key in the file falls back to its default with a log line', () => {
+  writeFileSync(paths().config, JSON.stringify({ retentionDays: 7.5, sessionGapMinutes: 30.5 }));
+  const c = loadConfig();
+  expect(c.retentionDays).toBe(30);
+  expect(c.sessionGapMinutes).toBe(30.5);
+  expect(readRecentErrors(1)[0]).toMatch(/retentionDays/);
+});
+
 test('setConfigValue saves: the next loadConfig sees the value', () => {
   setConfigValue('retentionDays', '14');
   expect(loadConfig().retentionDays).toBe(14);

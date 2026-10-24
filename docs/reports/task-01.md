@@ -399,4 +399,35 @@ None in scope or behavior. Three clarifications where the plan was silent:
 
 ## 10. Commit
 
-To be filled in by Task 2's commit (B11). The commit message is `chore: scaffold project, paths, config, logger`.
+Commit `f52dd1e`, message `chore: scaffold project, paths, config, logger`. The owner reported CI green on all 6 jobs.
+
+```
+$ git show --stat --format='%h %s' f52dd1e
+f52dd1e chore: scaffold project, paths, config, logger
+
+ .github/workflows/ci.yml            |   31 +
+ .gitignore                          |    3 +
+ .prettierignore                     |    5 +
+ .prettierrc                         |    4 +
+ docs/PROGRESS.md                    |    8 +-
+ docs/reports/task-00-plan-review.md |   13 +-
+ docs/reports/task-01.md             |  402 ++++
+ eslint.config.js                    |    8 +
+ package-lock.json                   | 3822 +++++++++++++++++++++++++++++++++++
+ package.json                        |   36 +
+ src/cli/index.ts                    |   15 +
+ src/core/budget.ts                  |   17 +
+ src/core/config.ts                  |  223 ++
+ src/core/logger.ts                  |   41 +
+ src/core/paths.ts                   |   46 +
+ tests/core/budget.test.ts           |   40 +
+ tests/core/config.test.ts           |  143 ++
+ tests/core/logger.test.ts           |   71 +
+ tests/core/paths.test.ts            |   67 +
+ tsconfig.json                       |   20 +
+ tsup.config.ts                      |   10 +
+ vitest.config.ts                    |   21 +
+ 22 files changed, 5041 insertions(+), 5 deletions(-)
+```
+
+Owner's answers to §9: (1) leave esbuild's install script unapproved; (2) CI green; (3) fine as is; (4) doctor's config-problems helper goes into Task 15.

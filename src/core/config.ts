@@ -43,22 +43,25 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze<Config>({
 
 type Kind =
   | { type: 'number' }
+  | { type: 'integer' }
   | { type: 'boolean' }
   | { type: 'nullableString' }
   | { type: 'enum'; values: readonly string[] }
   | { type: 'list'; values?: readonly string[] };
 
+// Durations may be decimal; counts and sizes must be whole numbers.
 const NUMBER: Kind = { type: 'number' };
+const INTEGER: Kind = { type: 'integer' };
 const BOOLEAN: Kind = { type: 'boolean' };
 
 // Every settable leaf key. Hand-written validation: no schema library (plan Task 1).
 const FIELDS: Record<string, Kind> = {
   sessionGapMinutes: NUMBER,
-  retentionDays: NUMBER,
+  retentionDays: INTEGER,
   'autoBrief.enabled': BOOLEAN,
   'autoBrief.gapHours': NUMBER,
-  'ingest.maxBytesPerFilePerRun': NUMBER,
-  'codex.maxCompressedMb': NUMBER,
+  'ingest.maxBytesPerFilePerRun': INTEGER,
+  'codex.maxCompressedMb': INTEGER,
   'collectors.claude': BOOLEAN,
   'collectors.codex': BOOLEAN,
   'collectors.shell': BOOLEAN,
@@ -70,7 +73,7 @@ const FIELDS: Record<string, Kind> = {
   'polish.ollamaModel': { type: 'nullableString' },
   'polish.apiModel': { type: 'nullableString' },
   'looseEnds.staleDays': NUMBER,
-  'looseEnds.maxProjects': NUMBER,
+  'looseEnds.maxProjects': INTEGER,
 };
 
 const SECTIONS = new Set(
@@ -100,6 +103,8 @@ function isValid(kind: Kind, v: unknown): boolean {
   switch (kind.type) {
     case 'number':
       return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+    case 'integer':
+      return Number.isSafeInteger(v) && (v as number) >= 0;
     case 'boolean':
       return typeof v === 'boolean';
     case 'nullableString':
@@ -120,6 +125,11 @@ function parseRaw(key: string, kind: Kind, raw: string): unknown {
   switch (kind.type) {
     case 'number':
       if (!/^\d+(\.\d+)?$/.test(s)) throw new Error(`${key} must be a number ≥ 0, got "${raw}"`);
+      return Number(s);
+    case 'integer':
+      if (!/^\d+$/.test(s) || !Number.isSafeInteger(Number(s))) {
+        throw new Error(`${key} must be an integer (a whole number ≥ 0), got "${raw}"`);
+      }
       return Number(s);
     case 'boolean':
       if (s !== 'true' && s !== 'false')
