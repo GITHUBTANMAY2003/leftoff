@@ -1,0 +1,36 @@
+{
+  "name": "@leftoff-dev/cli",
+  "version": "0.0.1",
+  "description": "Your agents say they're done. leftoff shows you what's actually left.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "leftoff": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project unit",
+    "test:e2e": "npm run build && vitest run --project e2e --passWithNoTests",
+    "format": "prettier --write .",
+    "check": "tsc --noEmit && eslint . && prettier --check . && vitest run --project unit"
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
+    "tsup": "^9.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}

@@ -303,4 +303,15 @@ Decisions needed later (I'll stop and ask again at the task, but you can answer 
 
 ## 10. Commit
 
-To be filled in by Task 1's commit (see B11). The commit message is `docs: add plan review and progress tracker`.
+Commit `76e3c17`, message `docs: add plan review and progress tracker`.
+
+```
+$ git show --stat --format='%h %s' 76e3c17
+76e3c17 docs: add plan review and progress tracker
+
+ docs/PROGRESS.md                    |  32 ++++
+ docs/reports/task-00-plan-review.md | 306 ++++++++++++++++++++++++++++++++++++
+ 2 files changed, 338 insertions(+)
+```
+
+The owner answered this review on 2026-10-24. The decisions were applied to the plan in commit `11c35e4` ("docs: apply plan review decisions").

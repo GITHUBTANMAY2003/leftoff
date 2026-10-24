@@ -3,12 +3,12 @@
 Source plan: [leftoff-implementation-plan.md](leftoff-implementation-plan.md). Reports live in [reports/](reports/).
 
 Status values: `not started` · `in progress` · `done` · `blocked` · `deferred`.
-The commit hash for each task is filled in by the next task's commit.
+The commit hash for each task is filled in by the next task's commit (plan review B11).
 
 | # | Task | Status | Commit | Deviations from plan |
 |---|---|---|---|---|
-| 0 | Plan review ([report](reports/task-00-plan-review.md)) | done | (filled in by Task 1) | — |
-| 1 | Project scaffold, paths, config, logger | not started | | |
+| 0 | Plan review ([report](reports/task-00-plan-review.md)) | done | `76e3c17` | — (decisions applied to the plan in `11c35e4`) |
+| 1 | Project scaffold, paths, config, logger ([report](reports/task-01.md)) | done | (filled in by Task 2) | None in scope. Clarifications: 25 tests beyond the plan's list; `setConfigValue` also saves; `package.json` gets `description` and `license` early |
 | 2 | SQLite store and repository | not started | | |
 | 3 | Event model, redaction, project resolution | not started | | |
 | 4 | Shell hook scripts and shell collector | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit.
 
 ## Next task
 
-**Task 1: Project scaffold, paths, config, logger.** Waiting on the owner's answers to the Task 1 questions in the plan review, §2.
+**Task 2: SQLite store and repository.** Waiting for the owner's `continue`.
