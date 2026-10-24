@@ -1,0 +1,5 @@
+1729764000000	0	12	4242	/fixture/app	npm test
+1729764005000	1	840	4242	/fixture/app	npm run build
+1729764010000	127	3	4242	/fixture/app/src	pyhton app.py
+1729764020000	0	-1	5151	/fixture/other	export GH_TOKEN=abc123
+this line is malformed

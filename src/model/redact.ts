@@ -26,6 +26,10 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\bsk-[A-Za-z0-9_-]{20,}/g, R],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, R],
   [/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, R],
+  // Passwords given to -p by these commands only (-p means "port" or
+  // "parents" elsewhere). mysql takes it glued (-pSECRET; bare -p prompts).
+  [/(\b(?:mysql|mariadb|mysqldump)\b[^\n|;&]*?\s-p)\S+/g, `$1${R}`],
+  [/(\bsshpass\b[^\n|;&]*?\s-p\s*)\S+/g, `$1${R}`],
   // "password": "value"
   [
     /("([^"]*)"\s*:\s*)"(?:[^"\\]|\\.)*"/g,

@@ -386,4 +386,29 @@ All matched files use Prettier code style!
 
 ## 10. Commit
 
-To be filled in by Task 4's commit (B11). The commit message is `feat(model): events, redaction, project resolution`.
+Commit `017b1d1`, message `feat(model): events, redaction, project resolution`.
+
+```
+$ git show --stat --format='%h %s' 017b1d1
+017b1d1 feat(model): events, redaction, project resolution
+
+ docs/PROGRESS.md                    |   6 +-
+ docs/leftoff-implementation-plan.md |  11 +-
+ docs/reports/task-02.md             |  31 ++-
+ docs/reports/task-03.md             | 389 ++++++++++++++++++++++++++++++++++++
+ src/model/event.ts                  |  64 +++++-
+ src/model/project.ts                |  47 +++++
+ src/model/redact.ts                 |  68 +++++++
+ src/store/repo.ts                   |  45 +++--
+ tests/model/event.test.ts           | 100 +++++++++
+ tests/model/project.test.ts         | 119 +++++++++++
+ tests/model/redact.test.ts          |  89 +++++++++
+ tests/store/repo.test.ts            |  25 +++
+ 12 files changed, 971 insertions(+), 23 deletions(-)
+```
+
+Owner's answers to §9:
+1. Add mysql/mariadb/mysqldump `-p<value>` and `sshpass -p <value>` rules (done in Task 4), plus the README leading-space note in the plan.
+2. Over-redaction accepted.
+3. Process-lifetime cache accepted.
+4. Confirmed: `pass`/`auth` as whole name segments, and `redactDeep` redacting by key.

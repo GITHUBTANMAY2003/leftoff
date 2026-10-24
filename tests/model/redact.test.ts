@@ -57,6 +57,25 @@ test('"Authorization: Bearer x" is handled by the Bearer rule, not the auth-assi
   expect(redact('Authorization: Bearer x1y2z3')).toBe('Authorization: Bearer [REDACTED]');
 });
 
+test.each([
+  ['mysql -u root -phunter2 shop', 'mysql -u root -p[REDACTED] shop'],
+  ['mariadb -h db -pS3cr3t!', 'mariadb -h db -p[REDACTED]'],
+  ['mysqldump -uroot -pabc123 shop > dump.sql', 'mysqldump -uroot -p[REDACTED] shop > dump.sql'],
+  ['sshpass -p hunter2 ssh deploy@host', 'sshpass -p [REDACTED] ssh deploy@host'],
+  ['sshpass -phunter2 scp a host:', 'sshpass -p[REDACTED] scp a host:'],
+])('redacts a glued or -p password: %s', (input, expected) => expect(redact(input)).toBe(expected));
+
+test.each([
+  'mysql -h db -P 3306 -u root -p shop', // -p alone prompts; -P is the port
+  'ssh -p 2222 deploy@host',
+  'docker run -p 3306:3306 mysql:8',
+  'mkdir -p build/out',
+  'git log -p -1',
+  'cd mysql-data && ls -p',
+  'pg_dump -p5432 shop', // glued -p is a port here
+  'tar -pxf backup.tar',
+])('-p in other commands is untouched: %j', (input) => expect(redact(input)).toBe(input));
+
 test('redact is idempotent', () => {
   const once = redact('ANTHROPIC_API_KEY=sk-ant-' + 'x'.repeat(30) + ' curl -H "Bearer abc"');
   expect(redact(once)).toBe(once);
