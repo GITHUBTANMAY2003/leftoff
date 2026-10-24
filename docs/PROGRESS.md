@@ -1,0 +1,32 @@
+# leftoff — Progress
+
+Source plan: [leftoff-implementation-plan.md](leftoff-implementation-plan.md). Reports live in [reports/](reports/).
+
+Status values: `not started` · `in progress` · `done` · `blocked` · `deferred`.
+The commit hash for each task is filled in by the next task's commit.
+
+| # | Task | Status | Commit | Deviations from plan |
+|---|---|---|---|---|
+| 0 | Plan review ([report](reports/task-00-plan-review.md)) | done | (filled in by Task 1) | — |
+| 1 | Project scaffold, paths, config, logger | not started | | |
+| 2 | SQLite store and repository | not started | | |
+| 3 | Event model, redaction, project resolution | not started | | |
+| 4 | Shell hook scripts and shell collector | not started | | |
+| 5 | Git collector | not started | | |
+| 6 | Incremental JSONL reader and Claude Code collector | not started | | |
+| 7 | Codex CLI collector | not started | | |
+| 8 | Ingest orchestrator | not started | | |
+| 9 | Work sessions and brief facts | not started | | |
+| 10 | Renderers, `resume` and `note` commands | not started | | |
+| 11 | Standup and loose-ends commands | not started | | |
+| 12 | AI polish providers and background summarize | not started | | |
+| 13 | Claude Code plugin and hook commands | not started | | |
+| 14 | Auto brief on terminal open | not started | | |
+| 15 | setup, doctor, status, forget, config, uninstall | not started | | |
+| 16 | End-to-end and performance tests | not started | | |
+| 17 | Dogfooding and hardening | not started | | |
+| 18 | Packaging, docs and release | not started | | |
+
+## Next task
+
+**Task 1: Project scaffold, paths, config, logger.** Waiting on the owner's answers to the Task 1 questions in the plan review, §2.
