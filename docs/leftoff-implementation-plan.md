@@ -1,6 +1,6 @@
 # leftoff — Design Spec and Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read **Part 1 (Spec)** in full before starting any task — every task argues from it.
+> **For agentic workers:** Implement this plan inline, one task at a time, with no subagents (owner decision D8 in `docs/reports/task-00-plan-review.md`). Each task follows TDD, ends with a report in `docs/reports/task-NN.md` and an update of `docs/PROGRESS.md`, is committed to `main` with the plan's commit message, and then waits for the owner's `continue`. Each task's commit hash is backfilled into its report and PROGRESS.md by the next task's commit. Steps use checkbox (`- [ ]`) syntax for tracking. Read **Part 1 (Spec)** in full before starting any task — every task argues from it.
 
 **Goal:** A free, open-source, local CLI that remembers what a developer (and their AI coding agent) was doing in each project, and gives it back as a "resume brief" and an auto-written standup when they return.
 
@@ -8,7 +8,7 @@
 
 **Package:** `@leftoff-dev/cli` (command `leftoff`).
 
-**Tech Stack:** Node.js ≥ 22, TypeScript (ESM, strict), `better-sqlite3`, `commander`, `fzstd`, `tsup` (build), `vitest` (tests), `eslint` + `prettier`, GitHub Actions, npm.
+**Tech Stack:** Node.js ≥ 22.12, TypeScript `~6.0.3` (ESM, strict), `better-sqlite3`, `commander`, `tsup` (build), `vitest` (tests), `eslint` + `prettier`, GitHub Actions, npm. Compressed Codex logs: Task 7 decides from real files (R-A4) — `node:zlib` zstd if `.jsonl.zst` files exist (this raises `engines` to `>=22.15`, where `node:zlib` gained zstd), otherwise no `.zst` support; `fzstd` is not used either way.
 
 **Spec:** Part 1 of this document.
 
@@ -33,7 +33,7 @@ Where you left off — myapp (feature/forgot-password) · last active 14h ago
 
 Done
   • Built POST /auth/forgot-password endpoint
-  • Added reset-token migration (commit a1b2c3d)
+  • Added reset-token migration
 
 Unfinished
   • email_service.py (modified, uncommitted)
@@ -46,8 +46,9 @@ Next step
   → Resolve: SMTP connection refused
 
 Sources: claude ✓  git ✓  shell ✓  codex –
-Run `leftoff resume` for full details · `leftoff standup` for your standup
 ```
+
+(This is exactly the Task 10 golden file `tests/render/golden/rahul.txt`. Both `Done` lines are commit subjects. With real data, `tried:` items are mechanical event summaries such as `Edited email_service.py`; the wording here comes from the test helper — R-D2.)
 
 And when he starts a new Claude Code session, the agent receives the same brief and does not retry the two failed fixes.
 
@@ -76,15 +77,38 @@ And when he starts a new Claude Code session, the agent receives the same brief 
 | P1 | Name | Product and command: **`leftoff`**. npm package: **`@leftoff-dev/cli`** (plain `leftoff` is blocked by npm as too similar to `liftoff`; the `leftoff` org name is unavailable). Placeholder `0.0.1` already published under the `leftoff-dev` npm org. GitHub: `github.com/GITHUBTANMAY2003/leftoff` (may move to a `leftoff-dev` GitHub org later; GitHub redirects). |
 | P2 | Platforms | macOS and Linux (incl. WSL). Native Windows not supported at launch; `doctor` says so. |
 | P3 | Shells | zsh, bash, fish. |
-| P4 | Data location | `~/.leftoff/` (override with env `LEFTOFF_HOME`). Directory mode `700`, files `600`. |
+| P4 | Data location | `~/.leftoff/` (override with env `LEFTOFF_HOME`). Directory mode `700`, files `600`. Contents: `leftoff.db`, `config.json`, `shell/` (copied shell scripts + `shell.log`), `bin/leftoff` (CLI shim), `logs/`, `tmp/`. |
 | P5 | Project identity | Git top-level directory (`git rev-parse --show-toplevel`); non-git folders use their real path. |
 | P6 | Work session | Consecutive events in one project with no gap ≥ `sessionGapMinutes` (default **45**). |
-| P7 | Auto-brief trigger | On shell start or `cd` into a project, print a compact brief if the project's last activity was ≥ `autoBrief.gapHours` (default **4**) ago **and** no brief has been shown since that activity. Disable with config or env `LEFTOFF_QUIET=1`. |
-| P8 | Claude Code hooks | `SessionStart` (matcher `startup|clear|compact`) injects the brief; `Stop` records a checkpoint; `SessionEnd` records the end and starts a short detached background summarize. |
+| P7 | Auto-brief trigger | On shell start or `cd` into a project, print a compact brief if the project's last activity was ≥ `autoBrief.gapHours` (default **4**) ago **and** no brief has been shown since that activity. Disable with config or env `LEFTOFF_QUIET=1`. `brief --auto` never waits for ingest, but spawns a detached background ingest at most once every 10 minutes so terminal-only users get fresh data and raw `shell.log` lines don't pile up (R-D3). |
+| P8 | Claude Code hooks | `SessionStart` (matcher `startup|clear|compact`; `resume` and `fork` excluded on purpose because those sessions already carry their transcript — R-C2) injects the brief; `Stop` records a checkpoint; `SessionEnd` records the end and **always** starts a short detached background summarize, which always ingests and calls a polish provider only if polish is enabled (R-B1). Hooks call the shim `~/.leftoff/bin/leftoff` when it exists, else `leftoff` on PATH (R-C4). |
 | P9 | Retention | Events older than `retentionDays` (default **30**) are pruned. |
 | P10 | Privacy | Secrets are redacted **before** storage. Commands typed with a leading space are never recorded. Projects/commands can be ignored by config. `leftoff forget` deletes data. Polish providers that send data off-machine are only used if the user enabled them in `setup`. Default polish without setup: `off`. |
 | P11 | Manual notes | `leftoff note "text"` adds a note to the current project's timeline; notes always appear in the brief. |
-| P12 | Distribution | npm (`npm i -g @leftoff-dev/cli && leftoff setup`), Claude Code plugin + marketplace manifest in the same GitHub repo, MIT license. |
+| P12 | Distribution | npm (`npm i -g @leftoff-dev/cli && leftoff setup`), Claude Code plugin + marketplace manifest in the same GitHub repo (marketplace name `leftoff`, plugin id `leftoff@leftoff`; dogfooding adds the marketplace from the local repo path — R-C8), MIT license. |
+
+**Plan review decisions.** References like `R-B6` point to item B6 in `docs/reports/task-00-plan-review.md`, as answered by the owner on 2026-10-24. Each decision is applied in the section or task it affects:
+
+| Ref | Decision | Applied in |
+|---|---|---|
+| R-A1, R-A2, R-A5, R-A6, R-A7 | TypeScript `~6.0.3`; `engines >=22.12`; CI on Node 22/24/26; `.ts` import extensions; unit vs e2e test split; `prettier --check` in `check` | Global Constraints, Task 1 |
+| R-A4, R-C5 | `.zst` support and its library decided from real Codex files | Task 7 |
+| R-B1 | SessionEnd always spawns background summarize (ingest always, polish only if enabled) | P8, Tasks 12, 13 |
+| R-B2, R-B3 | `Notes` section; §1.1 brief = golden file (subjects without hash, no footer, fixed Sources order) | §1.1, §1.8, Task 10 |
+| R-B4 | Standup drops "Worked on" when the project has commits in the window | Task 11 |
+| R-B5, R-B6 | `Collector.afterCommit?`; `shell.log` rotated by rename, never rewritten in place | §1.6, Tasks 4, 8 |
+| R-B7 | bash < 5: second-resolution timestamp, unknown duration | Task 4 |
+| R-B8 | Shell scripts copied to `~/.leftoff/shell/`, rc block sources them behind a `[ -r … ]` guard | Tasks 4, 15 |
+| R-B9 | Full `Config` shape, `config.json`, comma-separated lists | Task 1 |
+| R-B10 | Malformed counts as warnings; last ingest report stored in `cursors` | Tasks 8, 15 |
+| R-C4 | CLI shim `~/.leftoff/bin/leftoff` used by plugin hooks | P8, Tasks 13, 15 |
+| R-C6 | Honor `CLAUDE_CONFIG_DIR` and `CODEX_HOME` | §1.6, Tasks 6, 7 |
+| R-C7 | Safer polish CLI flags | §1.9, Task 12 |
+| R-D1 | Uncommitted files are a "claimed done" contradiction only when the claim says committed/pushed/merged/ready to merge | §1.7, Task 9, Review Focus 6 |
+| R-D3 | `brief --auto` spawns a background ingest at most every 10 minutes | P7, Task 14 |
+| R-D4, R-D5 | Claude first run limited to `retentionDays`; reader perf test uses 60 MB | Task 6 |
+| R-D6 | Redaction word-boundary regression tests | Task 3 |
+| R-D7 | Shell tests skip when the shell binary is missing; CI installs zsh and fish | Tasks 1, 4, 14 |
 
 ## 1.4 Components
 
@@ -97,8 +121,8 @@ Read on demand:            │   (cursors: read only new data)   brief injected 
 ```
 
 1. **Capture** — records only that something happened. Must never crash, never print to stdout unless that output is the contract, never slow the user down.
-   - Shell hook: pure shell, appends one TSV line per command to `~/.leftoff/shell/shell.log`. No Node process per command.
-   - Claude Code plugin hooks call `leftoff hook <name>`.
+   - Shell hook: pure shell, copied by `setup` to `~/.leftoff/shell/leftoff.{zsh,bash,fish}`, appends one TSV line per command to `~/.leftoff/shell/shell.log`. No Node process per command.
+   - Claude Code plugin hooks call `leftoff hook <name>` through the shim `~/.leftoff/bin/leftoff` (falling back to `leftoff` on PATH).
 2. **Collectors** — one per source, all implementing the same `Collector` interface. Each converts raw data into `WorkEvent`s and stores a cursor so the next run reads only new data.
 3. **Store** — one SQLite file `~/.leftoff/leftoff.db` (WAL mode). Tables: `events`, `cursors`, `briefs`, `brief_views`, `locks`.
 4. **Brief builder** — groups events into work sessions, extracts `BriefFacts` deterministically, renders terminal / markdown / JSON, and optionally attaches a cached polished summary.
@@ -130,9 +154,9 @@ interface WorkEvent {
 | Collector | Reads | Emits |
 |---|---|---|
 | git | On demand per project: current branch, `git status --porcelain=v2`, `git diff --stat`, commits since cursor, branch switches from reflog | `commit`, `branch_switch`; uncommitted state is read live into facts (not stored as events) |
-| shell | `~/.leftoff/shell/shell.log` from cursor; processed bytes are removed afterwards so raw lines don't linger | `command`, `command_failed` (exit ≠ 0) |
-| claude | Claude Code transcripts (`~/.claude/projects/**/*.jsonl`, plus paths reported by hooks), byte-offset cursor per file | `user_prompt`, `agent_message`, `file_edit` (Edit/Write/MultiEdit tool uses), `command` (Bash tool), `command_failed`/`tool_error` (tool results marked as errors), `test_failed`, `session_start`/`session_end` |
-| codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (byte-offset cursor) and `*.jsonl.zst` (re-read only when size/mtime change; skipped above `codex.maxCompressedMb`, default 200) | same kinds as claude |
+| shell | `~/.leftoff/shell/shell.log`, rotated by rename before reading (`shell.log` → `shell.log.<pid>.ingesting`) so shells keep appending to a fresh file; the renamed file is deleted after commit so raw lines don't linger (R-B6) | `command`, `command_failed` (exit ≠ 0) |
+| claude | Claude Code transcripts (`$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`, default `~/.claude/projects`, plus paths reported by hooks), byte-offset cursor per file; the first run only considers files modified within `retentionDays` | `user_prompt`, `agent_message`, `file_edit` (Edit/Write/MultiEdit tool uses), `command` (Bash tool), `command_failed`/`tool_error` (tool results marked as errors), `test_failed`, `session_start`/`session_end` |
+| codex | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` (default `~/.codex`; byte-offset cursor) and, only if Task 7 finds them in real data, `*.jsonl.zst` (re-read only when size/mtime change; skipped above `codex.maxCompressedMb`, default 200) | same kinds as claude |
 
 Agent log formats are not formally documented and change between versions. Parsers MUST: ignore unknown line types and fields, skip malformed lines (counting them for `doctor`), never advance a cursor past an incomplete final line, and cap work per run (`ingest.maxBytesPerFilePerRun`, default 50 MB) so `resume` stays fast.
 
@@ -171,13 +195,13 @@ Rules:
 - **Window:** the most recent work session for the project; if it has fewer than 3 events, include the previous session too.
 - **Open problem:** a `command_failed` / `tool_error` / `test_failed` event whose normalized command (whitespace collapsed, leading env assignments removed) is **not** followed later in the window by a successful `command` with the same normalized command. `attempts` = summaries of `file_edit` and `command` events after the failure, newest last, max 5, deduplicated.
 - **Next step (first match wins):** newest note starting with `next:` → `Verify: <first claimedDone contradiction>` → `Resolve: <newest open problem error>` → `Finish and commit changes in <first unfinished file>` (+ ` and N more`) → `Continue: <lastIntent>` → `null`.
-- **Claimed done:** take the newest `agent_message` in the window whose text matches `/\b(done|completed?|finished|fixed|implemented|all (tests )?pass(ing|ed)?|ready (for review|to merge))\b/i` and does not match `/\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i`. Contradictions (each a short string): every open problem from the same agent session or later (`"<error> (still failing)"`); `"<N> uncommitted files"` if there are uncommitted files and no `commit` event after the message. `claimedDone` is `null` when there is no matching message or no contradiction.
+- **Claimed done:** take the newest `agent_message` in the window whose text matches `/\b(done|completed?|finished|fixed|implemented|all (tests )?pass(ing|ed)?|ready (for review|to merge))\b/i` and does not match `/\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i`. Contradictions (each a short string): every open problem from the same agent session or later (`"<error> (still failing)"`); `"<N> uncommitted files"` **only if the claim itself says the work was committed** — the message matches `/\b(committed|pushed|merged|ready to merge)\b/i` — and there are uncommitted files and no `commit` event after the message. Uncommitted files alone are never a contradiction, because many developers review before committing (R-D1); they still appear under `Unfinished`. `claimedDone` is `null` when there is no matching message or no contradiction.
 - **Loose ends (cross-project):** for each project with events in the last `retentionDays`, build facts with stored events plus live git state, and include it if it has a claimedDone, an open problem, or uncommitted files. Order: claimedDone first, then by number of open problems (desc), then stale, then oldest `lastActiveAt`. At most `looseEnds.maxProjects` (default **20**) projects are checked, most recently active first.
 - **Polish never replaces facts.** A polished paragraph is shown above the facts; facts are always shown.
 
 ## 1.8 Output formats (exact copy)
 
-- Terminal brief: headings exactly `Where you left off`, `Agent said done, but`, `Done`, `Unfinished`, `Open problems`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error). Empty sections are omitted. Respect `NO_COLOR`.
+- Terminal brief: headings exactly `Where you left off`, `Agent said done, but`, `Done`, `Unfinished`, `Open problems`, `Notes`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error) in the fixed order `claude`, `git`, `shell`, `codex`. Empty sections are omitted. No footer line after `Sources:`. `Done` items are commit subjects without hashes, then `Edited N files: a, b, c` when present. Respect `NO_COLOR`. The §1.1 example is the exact reference.
 - Auto brief (terminal open): first line `Where you left off — <name> (<branch>) · last active <gap>`, at most 6 more lines (unfinished count, top open problem, next step), last line `Run \`leftoff resume\` for details`.
 - Agent context (Claude Code `additionalContext`): Markdown starting with `## Previous session in this project (from leftoff)`, ending with the line `This is an automatic summary of earlier work. Verify against the code before relying on it.` Max **4000** characters.
 - Standup: three sections `Yesterday:`, `Today:`, `Blockers:` (`Blockers: none` if empty).
@@ -197,14 +221,14 @@ api-server (main) · 4d ago · stale
 - Providers: `claude-cli`, `codex-cli`, `ollama`, `anthropic`, `openai`. Config `polish.provider`: `off` (default before setup) | `auto` (try enabled providers in the order listed) | one provider name. `polish.enabled` lists which providers the user allowed in setup.
 - Polish only runs in the **background** (after `SessionEnd`, or `leftoff resume --polish`). Foreground commands use a cached polished summary only if its `facts_hash` matches current facts; otherwise they show facts only. Never block the user on an LLM.
 - Input: the `BriefFacts` JSON (≤ 8000 chars). Instruction: rewrite into ≤ 4 sentences, add nothing not present in the facts. Output rejected if empty or > 1200 chars. Timeout 60 s.
-- **Recursion guard:** provider subprocesses run with env `LEFTOFF_INTERNAL=1` and cwd `~/.leftoff/tmp`. All hooks exit immediately when `LEFTOFF_INTERNAL=1`; all collectors ignore events whose project is inside `LEFTOFF_HOME`.
+- **Recursion guard (R-C7):** first layer — the CLI providers write no session at all and use no tools: `claude -p --no-session-persistence --tools ""` (never `--bare`: it skips keychain reads, which breaks subscription login on macOS) and `codex exec --ephemeral --skip-git-repo-check -s read-only` (`--skip-git-repo-check` is required because the cwd is not a git repo). Second layer — provider subprocesses run with env `LEFTOFF_INTERNAL=1` and cwd `~/.leftoff/tmp`; all hooks exit immediately when `LEFTOFF_INTERNAL=1`; all collectors ignore events whose project is inside `LEFTOFF_HOME`.
 - API providers need the user's key from env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) and a model name chosen in setup (`polish.apiModel`). No model id is hardcoded.
 
 ## 1.10 Commands
 
 | Command | Purpose |
 |---|---|
-| `leftoff setup` | Interactive: detect shells and agents, install shell hook block into rc files, install the Claude Code plugin, choose polish provider. Idempotent. |
+| `leftoff setup` | Interactive: detect shells and agents, write the CLI shim `~/.leftoff/bin/leftoff`, copy shell scripts to `~/.leftoff/shell/`, install shell hook block into rc files, install the Claude Code plugin, choose polish provider. Idempotent; the shim and scripts are refreshed on every run. |
 | `leftoff resume [--project <path>] [--json\|--md] [--polish]` | Full brief for the project of cwd (or `--project`). |
 | `leftoff standup [--since <yesterday\|today\|Nh\|YYYY-MM-DD>] [--all] [--copy]` | Standup text; `--all` covers every project; `--copy` uses pbcopy / wl-copy / xclip if present. |
 | `leftoff` (no arguments) / `leftoff loops [--json]` | **Loose ends across all projects** (§1.7, §1.8). The headline command. |
@@ -214,7 +238,7 @@ api-server (main) · 4d ago · stale
 | `leftoff forget (--project <path> \| --all)` | Delete stored data (asks for confirmation unless `--yes`). |
 | `leftoff config (get <key> \| set <key> <value> \| list)` | Read/write config. |
 | `leftoff uninstall` | Remove rc blocks, print the plugin uninstall command, optionally delete data. |
-| hidden: `leftoff hook <claude-session-start\|claude-stop\|claude-session-end>`, `leftoff brief --auto`, `leftoff internal summarize --project <path>` | Used by hooks. |
+| hidden: `leftoff hook <claude-session-start\|claude-stop\|claude-session-end>`, `leftoff brief --auto`, `leftoff internal summarize --project <path>`, `leftoff internal ingest` | Used by hooks and background jobs. |
 
 ## 1.11 Reliability rules (apply everywhere)
 
@@ -222,7 +246,7 @@ api-server (main) · 4d ago · stale
 - Every error is appended to `~/.leftoff/logs/leftoff.log` (rotated at 1 MB, keep 2 files). `doctor` shows the last 5.
 - One failing collector never prevents a brief. Its status shows as `!` and in `doctor`.
 - SQLite: WAL, `busy_timeout = 2000`, schema versioned with `PRAGMA user_version`. If the DB fails to open as a valid database, move it to `leftoff.db.corrupt-<timestamp>`, create a fresh one, log it.
-- Only one background summarize per project at a time (lease in `locks`, 120 s expiry).
+- Only one background summarize per project at a time (lease in `locks`, 120 s expiry). Only one background ingest at a time (lease `ingest:bg`, same pattern).
 
 ## 1.12 Success criteria
 
@@ -239,8 +263,11 @@ api-server (main) · 4d ago · stale
 
 ## Global Constraints
 
-- Node `>=22`; `"type": "module"`; TypeScript `strict: true`; target ES2022.
-- Runtime dependencies limited to: `better-sqlite3`, `commander`, `fzstd`. Anything else needs a written reason in the PR.
+- Node `>=22.12` (required by `commander@15`; R-A2); `"type": "module"`; TypeScript `~6.0.3` pinned (`typescript-eslint` does not support TypeScript 7; R-A1), `strict: true`, target ES2022.
+- Imports use `.ts` extensions; `tsconfig.json` sets `allowImportingTsExtensions`, `rewriteRelativeImportExtensions` and `erasableSyntaxOnly` (no `enum`, no parameter properties), so test child processes can run the TypeScript source with Node's built-in type stripping (R-A5).
+- Runtime dependencies limited to: `better-sqlite3`, `commander` (Task 7 adds no library: `node:zlib` handles zstd if needed). Anything else needs a written reason and the owner's approval.
+- Scripts: `build` (tsup), `test` (unit tests), `test:e2e` (`npm run build` then the e2e tests), `format` (`prettier --write .`), `check` (`tsc --noEmit && eslint . && prettier --check . && vitest run --project unit`). `vitest.config.ts` defines two projects: `unit` (`tests/**`, excluding `tests/e2e/**`) and `e2e` (`tests/e2e/**`). `.prettierignore` excludes `docs/`, `tests/fixtures/` (real logs must stay byte-exact), `dist/`, `coverage/` (R-A6, R-A7).
+- CI: `ubuntu-latest` and `macos-latest` × Node 22, 24, 26; installs zsh and fish explicitly; runs `npm ci`, `npm run check`, `npm run build`, `npm run test:e2e`. Tests that need a shell binary skip when it is missing locally (R-D7).
 - Data dir `~/.leftoff` (env `LEFTOFF_HOME` overrides); dir mode `0o700`, files `0o600`.
 - Defaults: `sessionGapMinutes 45`, `autoBrief.gapHours 4`, `retentionDays 30`, `ingest.maxBytesPerFilePerRun 52428800`, `codex.maxCompressedMb 200`, `polish.provider "off"`, `looseEnds.staleDays 3`, `looseEnds.maxProjects 20`.
 - Limits: event `summary` ≤ 300 chars, `data` ≤ 4096 bytes serialized, agent context ≤ 4000 chars, polish input ≤ 8000 chars, polish output ≤ 1200 chars.
@@ -248,26 +275,27 @@ api-server (main) · 4d ago · stale
 - Env flags: `LEFTOFF_INTERNAL=1` (skip all hooks), `LEFTOFF_QUIET=1` (no auto brief), `NO_COLOR` respected.
 - All timestamps stored as ISO 8601 UTC; displayed in local time.
 - Exact output copy from spec §1.8.
-- Every task ends with `npm run check` (= `tsc --noEmit && eslint . && vitest run`) passing, then a commit.
+- Every task ends with `npm run check` passing (and `npm run test:e2e` once e2e tests exist), then a commit.
 
 ## Review Focus
 
 1. **Recursion through polish** — running `claude -p` for polish fires our own hooks and writes a new transcript; expected: no hook output, no events from that session. Test in Task 12 and Task 13.
 2. **Hostile agent logs** — multi-GB files, a partial last line still being written, malformed JSON lines, unknown line types after an agent update; expected: ingest stays within budget, never crashes, cursor never skips the partial line. Tests in Tasks 6, 7, 8.
-3. **Secrets in commands and transcripts** — tokens, passwords, private keys typed in commands or echoed in tool output; expected: never stored unredacted; raw shell log bytes removed after ingest; leading-space commands never recorded. Tests in Tasks 3, 4, 8.
+3. **Secrets in commands and transcripts** — tokens, passwords, private keys typed in commands or echoed in tool output; expected: never stored unredacted; raw shell log bytes removed after ingest, with no command lost while shells keep appending; leading-space commands never recorded. Tests in Tasks 3, 4, 8.
 4. **Unusual project layouts** — non-git folder, repo with no commits, detached HEAD, nested repo, git worktree, path with spaces; expected: correct project root and a brief without crashing. Tests in Tasks 3, 5.
 5. **Concurrency** — two Claude sessions and the shell writing while `resume` reads; two `SessionEnd`s starting summarize at once; expected: no "database is locked" crash, one summarize runs. Tests in Tasks 2, 12.
-6. **False "claimed done" alarms** — agent messages like "I haven't finished", "done reading the file, now editing", or a claim followed by a fix and a passing re-run; expected: no flag when ground truth agrees, so developers don't learn to ignore it. Tests in Task 9.
+6. **False "claimed done" alarms** — agent messages like "I haven't finished", "done reading the file, now editing", a claim followed by a fix and a passing re-run, or "Done!" while the developer simply hasn't committed yet; expected: no flag when ground truth agrees, and uncommitted files flag only when the claim says committed/pushed/merged/ready to merge (R-D1), so developers don't learn to ignore it. Tests in Task 9.
 
 ---
 
 ## File structure
 
 ```
-package.json, tsconfig.json, tsup.config.ts, vitest.config.ts, eslint.config.js, .prettierrc
+package.json, package-lock.json, tsconfig.json, tsup.config.ts, vitest.config.ts,
+eslint.config.js, .prettierrc, .prettierignore, .gitignore
 src/
   cli/index.ts                      commander wiring, global error handler
-  cli/commands/resume.ts note.ts standup.ts status.ts doctor.ts setup.ts
+  cli/commands/resume.ts note.ts standup.ts loops.ts status.ts doctor.ts setup.ts
                forget.ts config.ts uninstall.ts brief-auto.ts hook.ts internal.ts
   core/paths.ts                     LEFTOFF_HOME, file paths, permissions
   core/config.ts                    load/validate/save config with defaults
@@ -282,20 +310,26 @@ src/
   model/project.ts                  resolveProject()
   collectors/types.ts               Collector interface
   collectors/git.ts shell.ts claude.ts codex.ts registry.ts
-  collectors/jsonl-reader.ts        incremental JSONL reading (plain + zst)
+  collectors/jsonl-reader.ts        incremental JSONL reading (plain; zst only if Task 7 needs it)
   ingest/ingest.ts                  run collectors with isolation, pruning
-  brief/sessions.ts facts.ts next-step.ts hash.ts
-  render/terminal.ts markdown.ts json.ts standup.ts auto.ts
+  ingest/background.ts              detached background ingest, rate-limited (Task 14)
+  brief/sessions.ts facts.ts next-step.ts hash.ts loose-ends.ts
+  render/terminal.ts markdown.ts json.ts standup.ts auto.ts loose-ends.ts
   polish/types.ts chain.ts summarize.ts prompt.ts
   polish/providers/claude-cli.ts codex-cli.ts ollama.ts anthropic.ts openai.ts
-  install/shell-rc.ts claude-plugin.ts
-shell/leftoff.zsh leftoff.bash leftoff.fish
+  install/shell-rc.ts claude-plugin.ts shim.ts
+shell/leftoff.zsh leftoff.bash leftoff.fish   (source copies; setup copies them to ~/.leftoff/shell/)
 plugin/.claude-plugin/plugin.json
 plugin/hooks/hooks.json
 .claude-plugin/marketplace.json
 .github/workflows/ci.yml release.yml
 tests/  (mirrors src/), tests/fixtures/{claude,codex,shell}/, tests/e2e/
-README.md CONTRIBUTING.md LICENSE CHANGELOG.md docs/adding-a-collector.md
+demo/demo.tape
+README.md CONTRIBUTING.md LICENSE CHANGELOG.md
+docs/leftoff-implementation-plan.md         this document
+docs/PROGRESS.md                            task status, commit hashes, deviations
+docs/reports/task-NN.md                     one report per task (task-00-plan-review.md = plan review)
+docs/adding-a-collector.md docs/dogfood-log.md docs/dogfood-checklist.md
 ```
 
 ---
@@ -303,18 +337,36 @@ README.md CONTRIBUTING.md LICENSE CHANGELOG.md docs/adding-a-collector.md
 ### Task 1: Project scaffold, paths, config, logger
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `tsup.config.ts`, `vitest.config.ts`, `eslint.config.js`, `.prettierrc`, `.github/workflows/ci.yml`, `src/core/paths.ts`, `src/core/config.ts`, `src/core/logger.ts`, `src/core/budget.ts`, `src/cli/index.ts`
+- Create: `package.json`, `package-lock.json`, `tsconfig.json`, `tsup.config.ts`, `vitest.config.ts`, `eslint.config.js`, `.prettierrc`, `.prettierignore`, `.gitignore`, `.github/workflows/ci.yml`, `src/core/paths.ts`, `src/core/config.ts`, `src/core/logger.ts`, `src/core/budget.ts`, `src/cli/index.ts`
 - Test: `tests/core/paths.test.ts`, `tests/core/config.test.ts`, `tests/core/logger.test.ts`, `tests/core/budget.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `paths(): { home, db, config, shellLog, logDir, logFile, tmp }` (all absolute; honors `LEFTOFF_HOME`)
+  - `paths(): { home, db, config, shellDir, shellLog, binDir, shim, logDir, logFile, tmp }` (all absolute; honors `LEFTOFF_HOME`; `config` = `<home>/config.json`, `shellDir` = `<home>/shell`, `binDir` = `<home>/bin`, `shim` = `<home>/bin/leftoff`)
   - `ensureHome(): void` (creates dirs with `0o700`)
-  - `type Config` (shape from spec §1.9/§1.3), `DEFAULT_CONFIG`, `loadConfig(): Config`, `saveConfig(c: Config): void`, `getConfigValue(key: string)`, `setConfigValue(key: string, raw: string): Config`
+  - `type Config`, `DEFAULT_CONFIG`, `loadConfig(): Config`, `saveConfig(c: Config): void` (mode `0o600`), `getConfigValue(key: string)`, `setConfigValue(key: string, raw: string): Config`
   - `logError(scope: string, err: unknown): void`, `readRecentErrors(n: number): string[]`
   - `withBudget<T>(p: Promise<T>, ms: number): Promise<T | undefined>`
 
-- [ ] **Step 1: Scaffold.** `package.json` with `"name": "@leftoff-dev/cli"`, `"bin": {"leftoff": "dist/cli.js"}`, `"publishConfig": {"access": "public"}`, `"engines": {"node": ">=22"}`, scripts `build` (tsup), `test` (vitest run), `check` (`tsc --noEmit && eslint . && vitest run`). CI workflow runs `npm ci && npm run check && npm run build` on `ubuntu-latest` and `macos-latest` × Node `22` and `24`.
+Config shape and defaults (R-B9):
+
+```ts
+{
+  sessionGapMinutes: 45,
+  retentionDays: 30,
+  autoBrief: { enabled: true, gapHours: 4 },
+  ingest: { maxBytesPerFilePerRun: 52428800 },
+  codex: { maxCompressedMb: 200 },
+  collectors: { claude: true, codex: true, shell: true, git: true },
+  ignore: { projects: [], commands: [] },          // string[] globs
+  polish: { provider: 'off', enabled: [], ollamaModel: null, apiModel: null },
+  looseEnds: { staleDays: 3, maxProjects: 20 },
+}
+```
+
+`setConfigValue` parses list keys (`ignore.projects`, `ignore.commands`, `polish.enabled`) as comma-separated values (items trimmed; `""` = empty list), numbers and booleans strictly, nullable strings with `""` = `null`.
+
+- [ ] **Step 1: Scaffold.** `package.json` with `"name": "@leftoff-dev/cli"`, `"bin": {"leftoff": "dist/cli.js"}`, `"publishConfig": {"access": "public"}`, `"engines": {"node": ">=22.12"}`, scripts `build`, `test`, `test:e2e`, `format`, `check` as in Global Constraints. `typescript` pinned to `~6.0.3`. `tsconfig.json` with the import flags from Global Constraints. `vitest.config.ts` with the `unit` and `e2e` projects (`test:e2e` passes with no e2e test files until Task 13 adds the first). CI workflow on `ubuntu-latest` and `macos-latest` × Node `22`, `24`, `26`: install zsh and fish, then `npm ci`, `npm run check`, `npm run build`, `npm run test:e2e`.
 
 - [ ] **Step 2: Write failing tests**
 
@@ -344,13 +396,18 @@ test('setConfigValue validates types', () => {
   expect(() => setConfigValue('autoBrief.gapHours', 'abc')).toThrow(/number/);
   expect(() => setConfigValue('nope.key', '1')).toThrow(/unknown key/);
 });
+test('setConfigValue parses comma-separated lists; "" is empty', () => {
+  expect(setConfigValue('ignore.projects', '~/secret/*, /tmp/*').ignore.projects).toEqual(['~/secret/*', '/tmp/*']);
+  expect(setConfigValue('ignore.projects', '').ignore.projects).toEqual([]);
+});
+test('config file is written with mode 0600', () => { /* saveConfig, stat mode */ });
 test('log rotates at 1 MB keeping 2 files', () => { /* write >1MB, expect leftoff.log and leftoff.log.1 only */ });
 test('withBudget returns undefined after timeout', async () => {
   expect(await withBudget(new Promise(r => setTimeout(() => r(1), 50)), 10)).toBeUndefined();
 });
 ```
 
-- [ ] **Step 3: Run** `npx vitest run tests/core` → FAIL (modules missing).
+- [ ] **Step 3: Run** `npx vitest run --project unit tests/core` → FAIL (modules missing).
 - [ ] **Step 4: Implement** the four modules. Config is validated by a hand-written validator (no schema library); unknown keys in the file are dropped with a log line.
 - [ ] **Step 5: Run** `npm run check` → PASS.
 - [ ] **Step 6: Commit** `git commit -m "chore: scaffold project, paths, config, logger"`
@@ -416,8 +473,8 @@ test('concurrent writers from two processes do not throw SQLITE_BUSY', async () 
 test('pruneOlderThan removes old events only', () => { ... });
 ```
 
-- [ ] **Step 2: Run** `npx vitest run tests/store` → FAIL.
-- [ ] **Step 3: Implement** `db.ts`, `migrations.ts` (array of SQL strings indexed by version; apply those above `user_version` in a transaction), `repo.ts`. `data` stored as JSON text. Set file mode `0o600` after creation.
+- [ ] **Step 2: Run** `npx vitest run --project unit tests/store` → FAIL.
+- [ ] **Step 3: Implement** `db.ts`, `migrations.ts` (array of SQL strings indexed by version; apply those above `user_version` in a transaction), `repo.ts`. `data` stored as JSON text. Set file mode `0o600` after creation. The concurrency test's child processes import `src/store/*.ts` directly via Node's type stripping (R-A5).
 - [ ] **Step 4: Run** `npm run check` → PASS.
 - [ ] **Step 5: Commit** `git commit -m "feat(store): sqlite repo with migrations, locks, corruption recovery"`
 
@@ -457,7 +514,11 @@ test('resolveProject: subdir of repo → repo root', () => { /* git init tmp, mk
 test('resolveProject: non-git folder → realpath', () => { ... });
 test('resolveProject: repo with no commits, detached HEAD, path with spaces, worktree', () => { ... });
 test('normalizeCommand strips env assignments', () => expect(normalizeCommand('  FOO=1  npm   test ')).toBe('npm test'));
+test('redact needs word boundaries: "risk-assessment-for-the-quarter" is unchanged', ...); // R-D6
+test('redact: "Authorization: Bearer x" is handled by the Bearer rule, not the auth-assignment rule', ...); // R-D6
 ```
+
+Every redaction pattern that starts with a literal prefix (`sk-`, `gh…_`, `xox…-`, `AKIA`, `eyJ`) is anchored with `\b` (R-D6).
 
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** `resolveProject` uses `execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { timeout: 500 })`, catching errors. **Step 4: Run** `npm run check` → PASS.
 - [ ] **Step 5: Commit** `git commit -m "feat(model): events, redaction, project resolution"`
@@ -474,18 +535,21 @@ test('normalizeCommand strips env assignments', () => expect(normalizeCommand(' 
 - Consumes: `makeEvent`, `dedupeKey`, `resolveProject`, `isInsideLeftoffHome`, `Repo` cursors.
 - Produces:
   - `interface CollectContext { repo: Repo; config: Config; now: Date; projectFilter?: string }`
-  - `interface Collector { name: Source; isAvailable(ctx: CollectContext): Promise<boolean>; collect(ctx: CollectContext): Promise<CollectResult> }`
+  - `interface Collector { name: Source; isAvailable(ctx: CollectContext): Promise<boolean>; collect(ctx: CollectContext): Promise<CollectResult>; afterCommit?(ctx: CollectContext): Promise<void> }` — `afterCommit` is optional and is called by ingest only after that collector's events and cursors were committed (R-B5).
   - `interface CollectResult { events: WorkEvent[]; pendingCursors: { key: string; value: string }[]; warnings: string[] }` — collectors only *read* cursors (`ctx.repo.getCursor(name, key)`); ingest (Task 8) inserts the events and commits `pendingCursors` in one transaction.
-  - `shellCollector: Collector`
+  - `shellCollector: Collector` (implements `afterCommit`)
+  - `installShellScripts(packageShellDir: string, version: string): void` — copies `leftoff.{zsh,bash,fish}` to `paths().shellDir` (mode `0o600`), each with a first line `# leftoff <version>` (R-B8); `installedShellScriptVersion(shell): string | null` for doctor.
   - `installShellHook(shell: 'zsh' | 'bash' | 'fish', rcPath: string, scriptPath: string): 'installed' | 'already'`, `removeShellHook(rcPath: string): boolean`
 
-Shell log line format (one line per command, tab-separated): `ts_epoch_ms \t exit_code \t duration_ms \t pid \t cwd \t command` with tabs/newlines in `cwd`/`command` replaced by spaces. Scripts:
-- zsh: `preexec` stores start time + command; `precmd` appends the line; `chpwd` and first prompt call `leftoff brief --auto` (Task 14 wires this; leave a function `__leftoff_auto` that is a no-op if `leftoff` is missing).
-- bash: `PROMPT_COMMAND` prepended (preserve existing), uses `history 1`; record only if the history number changed. **Must work on bash 3.2** (the default `/bin/bash` on macOS): no associative arrays, no `PS0`, no `${var,,}`, no `mapfile`; `PROMPT_COMMAND` may be a string, not an array. Test against `/bin/bash` on macOS CI.
-- fish: `fish_preexec` / `fish_postexec` events.
-- All: skip if command starts with a space, if `LEFTOFF_INTERNAL=1`, or if the log dir is missing. Never print. File created with `umask 077`.
+Shell log line format (one line per command, tab-separated): `ts_epoch_ms \t exit_code \t duration_ms \t pid \t cwd \t command` with tabs/newlines in `cwd`/`command` replaced by spaces; `duration_ms` is `-1` when unknown. `cwd` is the directory where the command started. Scripts:
+- zsh: `zmodload zsh/datetime`; `preexec` stores `$EPOCHREALTIME`, `$PWD` and the command; `precmd` appends the line; `chpwd` and first prompt call `leftoff brief --auto` (Task 14 wires this; leave a function `__leftoff_auto` that is a no-op if `leftoff` is missing).
+- bash: `PROMPT_COMMAND` prepended (preserve existing; capture `$?` first), uses `history 1`; record only if the history number changed. **Must work on bash 3.2** (the default `/bin/bash` on macOS): no associative arrays, no `PS0`, no `${var,,}`, no `mapfile`; `PROMPT_COMMAND` may be a string, not an array. Timing (R-B7): bash ≥ 5 uses `$EPOCHREALTIME`; bash < 5 has no millisecond clock and no start-of-command hook, so it writes `ts` = `$(date +%s)` × 1000 and `duration_ms` = `-1`, and `cwd` = `$PWD` at prompt time. Test against `/bin/bash` on macOS CI.
+- fish: `fish_preexec` / `fish_postexec` events; duration from `$CMD_DURATION`.
+- All: skip if command starts with a space, if `LEFTOFF_INTERNAL=1`, or if the log dir is missing. Never print. File created with `umask 077`. Each line is written with a single `printf … >>` so concurrent shells append whole lines.
 
-Collector: reads `shell.log` from byte cursor, splits complete lines only, emits `command` (exit 0) / `command_failed` (exit ≠ 0) with `summary` = redacted command (failed: `` `cmd` exited 1 ``), `sessionRef` = `shell:<pid>`, `data` = `{ exitCode, durationMs, cwd }`. Lines whose cwd matches `config.ignore.projects` globs, commands matching `config.ignore.commands`, or inside `LEFTOFF_HOME` are dropped. After a successful ingest commit, the processed prefix of the file is removed (rewrite remaining bytes to a temp file + rename) and the cursor reset to 0.
+rc block (R-B8): delimited by `# >>> leftoff >>>` / `# <<< leftoff <<<`, sources the **copied** script in `~/.leftoff/shell/` behind a guard so a missing file never prints an error — zsh/bash: `[ -r "$HOME/.leftoff/shell/leftoff.zsh" ] && . "$HOME/.leftoff/shell/leftoff.zsh"`; fish: `test -r …; and source …` (paths follow `LEFTOFF_HOME` when set at install time).
+
+Collector (R-B6): `collect` first atomically renames `shell.log` → `shell.log.<pid>.ingesting` (if a previous `*.ingesting` file exists from a crashed run, it is processed first), so shells keep appending to a fresh `shell.log` and no line is lost. It splits complete lines only, emits `command` (exit 0) / `command_failed` (exit ≠ 0) with `summary` = redacted command (failed: `` `cmd` exited 1 ``), `sessionRef` = `shell:<pid>`, `data` = `{ exitCode, durationMs, cwd }` (`durationMs: null` when the log says `-1`). Lines whose cwd matches `config.ignore.projects` globs, commands matching `config.ignore.commands`, or inside `LEFTOFF_HOME` are dropped. A partial last line is kept. `afterCommit` deletes the `*.ingesting` file, first appending any kept partial line to `shell.log`. If ingest does not commit (error or timeout), the `*.ingesting` file stays and is processed on the next run; the byte cursor (key = the `*.ingesting` file name) prevents re-reading committed lines.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -504,8 +568,13 @@ test('real zsh records a command line', () => {
   // simpler: zsh -fc 'source shell/leftoff.zsh; __leftoff_preexec "echo hi"; __leftoff_precmd'
   expect(readFileSync(log, 'utf8')).toMatch(/\t0\t\d+\t\d+\t.*\techo hi\n$/);
 });
-test.each(['bash', 'fish'])('%s hook records a command line', ...);
+test.each(['bash', 'fish'])('%s hook records a command line', ...); // skip when the binary is missing (R-D7)
+test('bash 3.2 (/bin/bash on macOS) writes duration -1, collector stores durationMs null', ...); // R-B7
 test('leading-space command is not recorded', ...);
+test('lines appended after the rename land in the new shell.log and are read next run', ...); // R-B6
+test('afterCommit deletes the ingesting file and keeps a partial last line', ...); // R-B6
+test('installShellScripts copies scripts with a version header and mode 0600', ...); // R-B8
+test('rc block sources the copied script behind a [ -r ] guard; missing script prints nothing', ...); // R-B8
 test('installShellHook is idempotent and removable', () => {
   expect(installShellHook('zsh', rc, script)).toBe('installed');
   expect(installShellHook('zsh', rc, script)).toBe('already');
@@ -515,7 +584,7 @@ test('installShellHook is idempotent and removable', () => {
 });
 ```
 
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement** scripts, collector, rc installer (block delimited by `# >>> leftoff >>>` / `# <<< leftoff <<<`, sourcing the installed script path). **Step 4: Run** `npm run check` → PASS.
+- [ ] **Step 2: Run** → FAIL. **Step 3: Implement** scripts, collector, script copier, rc installer (block as described above). **Step 4: Run** `npm run check` → PASS.
 - [ ] **Step 5: Commit** `git commit -m "feat(shell): shell hooks, shell collector, rc installer"`
 
 ---
@@ -575,7 +644,7 @@ test('git missing on PATH → warning, no throw', ...);
 test('reader returns complete lines only and correct nextOffset', ...);
 test('reader restarts at 0 when file shrank', ...);
 test('reader stops at maxBytes and resumes next call', ...);
-test('reader handles a 600 MB synthetic file within 3 s for the first 50 MB', ...); // perf, mark .skipIf(process.env.CI_FAST)
+test('reader handles a 60 MB synthetic file within 3 s for the first 50 MB', ...); // perf, mark .skipIf(process.env.CI_FAST) (R-D5)
 test('basic session → expected kinds in order', async () => {
   const kinds = (await collectFixture('session-basic.jsonl')).map(e => e.kind);
   expect(kinds).toEqual(expect.arrayContaining(['user_prompt', 'file_edit', 'command', 'command_failed', 'test_failed', 'agent_message']));
@@ -590,10 +659,13 @@ test('malformed and unknown lines are skipped and counted', ...);
 test('partial last line is not consumed', ...);
 test('re-reading the same file yields no new events (dedupe keys stable)', ...);
 test('sessions whose cwd is inside LEFTOFF_HOME are ignored', ...); // Review Focus 1
+test('CLAUDE_CONFIG_DIR relocates the projects directory', ...); // R-C6
+test('first run (no cursors) only considers files modified within retentionDays', ...); // R-D4
 ```
 
 - [ ] **Step 3: Run** → FAIL. **Step 4: Implement.**
-  - Discovery: union of transcript paths from `session_start`/`checkpoint`/`session_end` hook events and files under `~/.claude/projects/` with mtime newer than the newest stored claude cursor update minus 1 day.
+  - Base directory: `$CLAUDE_CONFIG_DIR` if set, else `$HOME/.claude` (R-C6).
+  - Discovery: union of transcript paths from `session_start`/`checkpoint`/`session_end` hook events and files under `<base>/projects/` with mtime newer than the newest stored claude cursor update minus 1 day; with no claude cursors yet, mtime within the last `retentionDays` (R-D4).
   - Mapping (from the fixtures): user text messages → `user_prompt`; assistant text → `agent_message` (keep last 300 chars); tool uses named `Edit`/`Write`/`MultiEdit`/`NotebookEdit` → `file_edit` with `data.path`; `Bash` → `command` with the command string; a tool result flagged as an error → `command_failed` (if its tool use was Bash) else `tool_error`; a Bash result whose output matches `/\b(\d+ (failed|failing)|FAIL\b|AssertionError|Tests?:\s+\d+ failed)/` → also `test_failed`. Tool results are matched to tool uses by id within the file (keep a per-file map of the last 500 tool uses in the cursor value as JSON if needed, or re-derive from the record).
   - Dedupe key: `dedupeKey('claude', file, endOffset, index)`.
   - Cursor key = file path, value = `nextOffset`.
@@ -605,28 +677,30 @@ test('sessions whose cwd is inside LEFTOFF_HOME are ignored', ...); // Review Fo
 ### Task 7: Codex CLI collector
 
 **Files:**
-- Create: `src/collectors/codex.ts` (extend `jsonl-reader.ts` with `readZstJsonl`)
-- Test: `tests/collectors/codex.test.ts`, fixtures `tests/fixtures/codex/*.jsonl`, `*.jsonl.zst`
+- Create: `src/collectors/codex.ts` (and, only if `.zst` files exist, extend `jsonl-reader.ts` with `readZstJsonl`)
+- Test: `tests/collectors/codex.test.ts`, fixtures `tests/fixtures/codex/*.jsonl` (and `*.jsonl.zst` if applicable)
 
 **Interfaces:**
 - Produces:
-  - `readZstJsonl(file: string, skipLines: number): Promise<{ records: unknown[]; totalLines: number; malformed: number }>` (uses `fzstd`)
+  - Only if `.zst` files exist: `readZstJsonl(file: string, skipLines: number): Promise<{ records: unknown[]; totalLines: number; malformed: number }>` (uses `node:zlib` zstd; R-A4)
   - `codexCollector: Collector`, `parseCodexRecord(rec: unknown, file: string, pos: number): WorkEvent[]`
 
 - [ ] **Step 0: Check access.** Run `codex --version` and try one short session. If Codex cannot run a session with the developer's current login, stop and ask whether to defer this task: if deferred, ship with the codex collector disabled (`collectors.codex = false`), keep the `Collector` interface ready, and note it in README as "coming soon".
-- [ ] **Step 1: Capture real fixtures** from `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` with the same scenario as Task 6; produce a `.zst` copy with `zstd`. Record the Codex version in `tests/fixtures/codex/README.md`.
+- [ ] **Step 1: Capture real fixtures** from `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` (default `~/.codex`; owner approves listing and copying) with the same scenario as Task 6. Record the Codex version in `tests/fixtures/codex/README.md`.
+- [ ] **Step 1b: Decide `.zst` support (R-A4, R-C5).** List the file names under `$CODEX_HOME/sessions/`. If `*.jsonl.zst` files exist: implement `readZstJsonl` with `node:zlib` zstd, raise `engines` to `>=22.15`, produce a `.zst` fixture with `zstd`, and keep `codex.maxCompressedMb`. If none exist: no `.zst` support; remove `codex.maxCompressedMb` from `Config` and the spec. Either way record the outcome in the report and PROGRESS.md.
 - [ ] **Step 2: Write failing tests**
 
 ```ts
 test('plain rollout → same kinds as claude scenario', ...);
 test('project root from session metadata cwd', ...);
-test('zst file read fully once, skipped when size+mtime unchanged', ...);
-test('zst file above codex.maxCompressedMb is skipped with a warning', ...);
+test('zst file read fully once, skipped when size+mtime unchanged', ...);   // only with .zst support
+test('zst file above codex.maxCompressedMb is skipped with a warning', ...); // only with .zst support
 test('missing ~/.codex → isAvailable false, no throw', ...);
+test('CODEX_HOME relocates the sessions directory', ...); // R-C6
 test('unknown record types ignored', ...);
 ```
 
-- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** Plain files: byte cursor as in Task 6. `.zst`: cursor value = `JSON.stringify({ size, mtimeMs, lines })`; when size or mtime changes, decompress and skip the first `lines` records. Map records using the fixtures (session metadata → project; user/assistant messages; shell/function calls → `command`; their outputs with non-zero exit → `command_failed`; patch/apply events → `file_edit`). **Step 5: Run** `npm run check` → PASS.
+- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** Base directory: `$CODEX_HOME` if set, else `$HOME/.codex` (R-C6). Plain files: byte cursor as in Task 6. `.zst` (if supported): cursor value = `JSON.stringify({ size, mtimeMs, lines })`; when size or mtime changes, decompress and skip the first `lines` records. Map records using the fixtures (session metadata → project; user/assistant messages; shell/function calls → `command`; their outputs with non-zero exit → `command_failed`; patch/apply events → `file_edit`). **Step 5: Run** `npm run check` → PASS.
 - [ ] **Step 6: Commit** `git commit -m "feat(codex): codex collector with plain and zstd rollouts"`
 
 ---
@@ -644,7 +718,9 @@ test('unknown record types ignored', ...);
   - `ingest(ctx: CollectContext, opts?: { budgetMs?: number }): Promise<IngestReport>`
   - `interface IngestReport { perSource: Record<Source, { status: 'ok' | 'not_found' | 'error'; inserted: number; warnings: string[]; detail?: string }>; prunedEvents: number }`
 
-Contract: each collector runs in its own try/catch under `withBudget` (default `budgetMs` 1200 split evenly; a timed-out collector reports `error` with `detail: 'timeout'` and its cursors are not committed). For each collector: insert events, then commit `pendingCursors`, both in one transaction (so a crash between them cannot skip data). After shell commit, truncate the processed prefix of `shell.log`. Prune events older than `retentionDays` at most once per hour (timestamp in `cursors` as `('ingest','last_prune')`).
+Contract: each collector runs in its own try/catch under `withBudget` (default `budgetMs` 1200 split evenly; a timed-out collector reports `error` with `detail: 'timeout'` and its cursors are not committed). For each collector: insert events, then commit `pendingCursors`, both in one transaction (so a crash between them cannot skip data). After that transaction commits, call the collector's `afterCommit` if it has one (R-B5; the shell collector deletes its rotated `*.ingesting` file there — R-B6); an `afterCommit` error is logged and reported as a warning, never thrown. Prune events older than `retentionDays` at most once per hour (timestamp in `cursors` as `('ingest','last_prune')`).
+
+Malformed lines (R-B10): collectors report them in `warnings` as `malformed:<count>:<file>`. After each run, ingest stores the `IngestReport` as JSON in `cursors` under `('ingest','last_report')`; doctor (Task 15) reads it from there.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -657,6 +733,8 @@ test('one collector throwing does not stop others', async () => {
 test('cursor not committed when insert fails', ...);
 test('timeout marks collector error and keeps old cursor', ...);
 test('shell.log processed bytes are removed after commit; unprocessed partial line kept', ...); // Review Focus 3
+test('afterCommit is not called when the insert fails or the collector times out', ...); // R-B5
+test('last IngestReport with malformed warnings is stored in cursors', ...); // R-B10
 test('prunes old events at most hourly', ...);
 test('ingest while another process holds a write transaction waits instead of throwing', ...); // Review Focus 5
 ```
@@ -682,7 +760,7 @@ test('ingest while another process holds a write transaction waits instead of th
   - `detectClaimedDone(events: WorkEvent[], openProblems: OpenProblem[], uncommittedCount: number): ClaimedDone | null`
   - `factsHash(f: BriefFacts): string` (sha1 of JSON excluding `lastActiveAt` and `sources`)
 
-- [ ] **Step 1: Write failing tests** — build the §1.1 Rahul scenario as an event list helper `rahulEvents()` used here and in Task 16.
+- [ ] **Step 1: Write failing tests** — build the §1.1 Rahul scenario as an event list helper `rahulEvents()` used here and in Tasks 10, 11 and 16. It contains two `commit` events with subjects `Built POST /auth/forgot-password endpoint` and `Added reset-token migration` (R-B3), the SMTP failure, and the two attempts.
 
 ```ts
 test('splits on 45 min gap', ...);
@@ -695,7 +773,10 @@ test('open problem: failure without later success', () => {
 });
 test('failure followed by same command succeeding is resolved', ...);
 test('claimed done: "All tests pass" then a test failure → flagged with "(still failing)"', ...);
-test('claimed done: "Done!" with uncommitted files and no later commit → "2 uncommitted files"', ...);
+test('claimed done: "Done!" with uncommitted files and no later commit → null (uncommitted alone is not a contradiction)', ...); // R-D1
+test.each(['Committed the fix', 'Pushed to origin', 'Merged into main', 'Ready to merge'])
+  ('claimed done: %j with 2 uncommitted files and no later commit → "2 uncommitted files"', ...); // R-D1
+test('claimed done: "Committed the fix" followed by a commit event → null', ...); // R-D1
 test('claimed done: claim, then failure, then fix and passing re-run → null', ...);
 test.each(["I haven't finished the migration", 'not done yet', "it's still not passing"])
   ('claimed done: negation %j is never a claim', ...);
@@ -749,6 +830,8 @@ test('terminal render matches golden for rahul scenario', () => {
   expect(renderTerminal(rahulFacts(), null, { color: false })).toMatchFileSnapshot('golden/rahul.txt');
 });
 test('empty sections are omitted', ...);
+test('Notes section renders after Open problems and before Next step', ...); // R-B2
+test('Sources line uses the fixed order claude, git, shell, codex; no footer after it', ...); // R-B3
 test('"Agent said done, but" section renders first with each contradiction', ...);
 test('NO_COLOR disables ANSI', ...);
 test('agent context starts and ends with exact lines and is ≤ 4000 chars even with 200 files', ...);
@@ -760,7 +843,7 @@ test('resume in a project with no data prints a friendly line and exits 0', asyn
 test('note appears in next resume output', ...);
 ```
 
-Golden file `tests/render/golden/rahul.txt` must equal the brief in spec §1.1.
+Golden file `tests/render/golden/rahul.txt` must equal the brief in spec §1.1 (commit subjects without hashes, no footer, fixed Sources order — R-B3). The Rahul facts have no notes and no `Edited N files` line.
 
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** `npm run check` → PASS.
 - [ ] **Step 5: Commit** `git commit -m "feat(cli): renderers, resume and note commands"`
@@ -782,7 +865,7 @@ Golden file `tests/render/golden/rahul.txt` must equal the brief in spec §1.1.
   - `renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: boolean }): string` (exact format §1.8)
   - `runLoops(opts: { json: boolean }): Promise<{ output: string; exitCode: number }>` — ingest (budget 1200 ms) then build; total budget 1500 ms; a project whose git read times out is shown with `? git status unavailable` instead of being dropped.
 
-Default `since` = start of previous local day when today is Mon–Fri and previous working day is Friday on Mondays. Yesterday = commit subjects + "Worked on <files> with <agent>" per project; Today = next steps; Blockers = open problems. Prefix items with project name when `--all`. `--copy` tries `pbcopy`, `wl-copy`, `xclip -selection clipboard` in order; prints `(copied)` or `(clipboard tool not found)`.
+Default `since` = start of previous local day when today is Mon–Fri and previous working day is Friday on Mondays. Yesterday = commit subjects per project; a project with **no** commits in the window gets `Worked on <files> with <agent>` instead (R-B4); Today = next steps; Blockers = open problems. Prefix items with project name when `--all`. `--copy` tries `pbcopy`, `wl-copy`, `xclip -selection clipboard` in order; prints `(copied)` or `(clipboard tool not found)`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -797,6 +880,7 @@ Today:
 Blockers:
 - SMTP connection refused`);
 });
+test('project without commits gets "Worked on <files> with <agent>"', ...); // R-B4
 test('Monday since covers Friday', ...);
 test('no activity → Blockers: none and a friendly Yesterday line', ...);
 test('--all prefixes project names', ...);
@@ -826,11 +910,11 @@ test('bare `leftoff` runs loops', ...);
   - `pickProviders(config: Config): PolishProvider[]` (`off` → []; `auto` → enabled providers in fixed order; single name → that one if enabled)
   - `polishNow(root: string, deps): Promise<{ polished: string | null; provider: string | null }>` — builds facts, skips if cached `factsHash` matches, tries providers in order, saves via `repo.saveBrief`.
   - `spawnBackgroundSummarize(root: string): void` — `spawn(process.execPath, [cliPath, 'internal', 'summarize', '--project', root], { detached: true, stdio: 'ignore', env: { ...process.env, LEFTOFF_INTERNAL: '1' }, cwd: paths().tmp }).unref()`
-  - `runInternalSummarize(root: string): Promise<void>` — `acquireLock('summarize:' + root, pid, 120_000)`; if false, return; ingest; `polishNow`; release.
+  - `runInternalSummarize(root: string): Promise<void>` — `acquireLock('summarize:' + root, pid, 120_000)`; if false, return; **always** ingest; `polishNow` only if `polish.provider` is not `off` (R-B1); release.
 
-Provider details (verify exact flags with `claude --help` / `codex --help` / Ollama docs while implementing; required behavior in parentheses):
-- `claude-cli`: `claude -p` with the prompt on stdin, text output (single turn, no tools, no interactive prompts), cwd `paths().tmp`, env `LEFTOFF_INTERNAL=1`.
-- `codex-cli`: `codex exec` non-interactive with the prompt (same requirements).
+Provider details (flags verified against Claude Code 2.1.310 and codex-cli 0.163.0 `--help` during the plan review — R-C7; re-check at implementation; required behavior in parentheses):
+- `claude-cli`: `claude -p --no-session-persistence --tools "" --output-format text` with the prompt on stdin (single turn, no tools, no transcript written, no interactive prompts), cwd `paths().tmp`, env `LEFTOFF_INTERNAL=1`. Never `--bare` (it skips keychain reads, breaking subscription login on macOS).
+- `codex-cli`: `codex exec --ephemeral --skip-git-repo-check -s read-only -` with the prompt on stdin (no session files, read-only sandbox; `--skip-git-repo-check` because the cwd is not a git repo), cwd `paths().tmp`, env `LEFTOFF_INTERNAL=1`.
 - `ollama`: `POST http://127.0.0.1:11434/api/generate` `{ model: config.polish.ollamaModel, prompt, stream: false }` → `response`.
 - `anthropic` / `openai`: official HTTPS APIs via `fetch`, key from env, model from `config.polish.apiModel`; unavailable if key or model missing.
 
@@ -843,6 +927,9 @@ test('invalid polish output is discarded', ...);
 test('cached polish reused when factsHash unchanged; no provider call', ...);
 test('two concurrent summarizes: only one calls the provider', async () => { /* lock */ }); // Review Focus 5
 test('claude-cli provider spawns with LEFTOFF_INTERNAL=1 and cwd in LEFTOFF_HOME/tmp', () => { /* spy on spawn */ }); // Review Focus 1
+test('claude-cli args include --no-session-persistence and --tools "" and never --bare', ...); // R-C7
+test('codex-cli args include --ephemeral, --skip-git-repo-check and -s read-only', ...); // R-C7
+test('internal summarize with polish off still ingests and calls no provider', ...); // R-B1
 test('prompt contains facts JSON and the no-invention instruction, ≤ 8000 chars', ...);
 ```
 
@@ -854,23 +941,30 @@ test('prompt contains facts JSON and the no-invention instruction, ≤ 8000 char
 ### Task 13: Claude Code plugin and hook commands
 
 **Files:**
-- Create: `plugin/.claude-plugin/plugin.json`, `plugin/hooks/hooks.json`, `.claude-plugin/marketplace.json`, `src/cli/commands/hook.ts`, `src/install/claude-plugin.ts`
-- Test: `tests/cli/hook.test.ts`, `tests/install/claude-plugin.test.ts`
+- Create: `plugin/.claude-plugin/plugin.json`, `plugin/hooks/hooks.json`, `.claude-plugin/marketplace.json`, `src/cli/commands/hook.ts`, `src/install/claude-plugin.ts`, `src/install/shim.ts`
+- Test: `tests/cli/hook.test.ts`, `tests/install/claude-plugin.test.ts`, `tests/install/shim.test.ts`, `tests/e2e/hook-cli.e2e.test.ts` (the real-CLI test, moved to e2e because it needs `dist/` — R-A6)
 
 **Interfaces:**
 - Consumes: `runResume` pieces (`ingest`, `buildFacts`, `renderAgentContext`), `spawnBackgroundSummarize`, `makeEvent`.
 - Produces:
   - `runHook(name: 'claude-session-start' | 'claude-stop' | 'claude-session-end', stdin: string): Promise<{ stdout: string }>` — never throws.
-  - `installClaudePlugin(): Promise<'installed' | 'already' | 'claude-not-found' | 'failed'>`, `claudePluginInstalled(): Promise<boolean>`
+  - `installClaudePlugin(source: string): Promise<'installed' | 'already' | 'claude-not-found' | 'failed'>` (`source` = `GITHUBTANMAY2003/leftoff`, or the local repo path while dogfooding — R-C8), `claudePluginInstalled(): Promise<boolean>`
+  - `installShim(nodePath: string, cliPath: string): void` — writes `paths().shim` (mode `0o700`): a POSIX `sh` script that runs `exec '<abs node>' '<abs dist/cli.js>' "$@"`; overwritten on every call (R-C4). `shimStatus(): { exists: boolean; nodePath: string | null; cliPath: string | null; works: boolean }` — `works` = both paths exist and `<shim> --version` exits 0 within 1 s.
 
-`hooks.json` registers: `SessionStart` with matcher `startup|clear|compact` → `leftoff hook claude-session-start` (timeout 5 s); `Stop` → `leftoff hook claude-stop` (timeout 2 s); `SessionEnd` → `leftoff hook claude-session-end` (timeout 2 s). Each command is wrapped so a missing binary is silent: `command -v leftoff >/dev/null 2>&1 && leftoff hook <name> || true`.
+`hooks.json` registers: `SessionStart` with matcher `startup|clear|compact` (R-C2) → `claude-session-start` (timeout 5 s); `Stop` → `claude-stop` (timeout 2 s); `SessionEnd` → `claude-session-end` (timeout 2 s; Claude Code gives SessionEnd hooks a shared 1.5 s budget raised to the largest per-hook timeout — R-C3). Each command prefers the shim and falls back to PATH, and always exits 0 (R-C4):
+
+```sh
+L="${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff"; if [ -x "$L" ]; then "$L" hook <name>; elif command -v leftoff >/dev/null 2>&1; then leftoff hook <name>; fi; exit 0
+```
+
+`.claude-plugin/marketplace.json` names the marketplace `leftoff`; the plugin id is `leftoff@leftoff` (R-C8).
 
 Behavior:
 - Any hook with `LEFTOFF_INTERNAL=1` → empty stdout immediately.
 - `claude-session-start`: parse stdin JSON (`session_id`, `transcript_path`, `cwd`, `source`); record `session_start` event with `data.transcriptPath`; within 2000 ms budget: ingest (budget 1000 ms), facts, `renderAgentContext`; print `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"…"}}`. If the project has no prior events, or budget exceeded, print nothing.
 - `claude-stop`: record `checkpoint` with transcript path. Nothing printed.
-- `claude-session-end`: record `session_end`; `spawnBackgroundSummarize(project)` if polish is not `off`. Nothing printed.
-- `installClaudePlugin`: if `claude` on PATH, run `claude plugin marketplace add <github-repo>` then `claude plugin install leftoff@<marketplace-name>` (verify current CLI syntax with `claude plugin --help`); on failure print the two commands for the user to run.
+- `claude-session-end`: record `session_end`; **always** `spawnBackgroundSummarize(project)` (it ingests, and polishes only if enabled — R-B1). Nothing printed.
+- `installClaudePlugin`: if `claude` on PATH, run `claude plugin marketplace add <source>` then `claude plugin install leftoff@leftoff` (syntax verified with `claude plugin --help` in the plan review; re-check at implementation); on failure print the two commands for the user to run.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -884,12 +978,17 @@ test('garbage stdin → empty stdout, no throw', ...);
 test('LEFTOFF_INTERNAL=1 → empty stdout and no events written', ...); // Review Focus 1
 test('session-start with no prior data prints nothing', ...);
 test('session-start respects 2000 ms budget when ingest is slow', ...);
-test('session-end spawns summarize only when polish enabled', ...);
+test('session-end always spawns summarize, also with polish off', ...); // R-B1
 test('hooks.json is valid and references the three hooks', () => { /* JSON.parse + shape asserts */ });
+test('hook command uses the shim when present, falls back to PATH, exits 0 when neither exists', () => { /* run the command string with sh -c in a temp HOME */ }); // R-C4
+test('installShim writes an executable script with absolute node and cli paths; re-run overwrites', ...); // R-C4
+test('shimStatus reports works=false when the cli path no longer exists', ...); // R-C4
+// tests/e2e/hook-cli.e2e.test.ts:
 test('real CLI: `leftoff hook claude-stop` exits 0 with empty stdout on empty stdin', () => { /* execFileSync built dist */ });
 ```
 
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement**; also validate with `claude plugin validate plugin` locally if Claude Code is installed. **Step 4: Run** `npm run check` → PASS.
+- [ ] **Step 2: Run** → FAIL. **Step 3: Implement**; also validate with `claude plugin validate plugin` locally if Claude Code is installed. **Step 4: Run** `npm run check` and `npm run test:e2e` → PASS.
+- [ ] **Step 4b: Real-session check with the owner (R-C3, Review Focus 1).** With the owner's approval, add the marketplace from the local repo path and install the plugin into their real Claude Code. In one real session confirm: the brief is injected at startup; a polish run with `LEFTOFF_INTERNAL=1` produces no hook output and no events; the SessionEnd background child survives Claude Code exiting (it finishes its ingest). Record the results in the report.
 - [ ] **Step 5: Commit** `git commit -m "feat(claude): plugin hooks inject brief and record sessions"`
 
 ---
@@ -897,14 +996,16 @@ test('real CLI: `leftoff hook claude-stop` exits 0 with empty stdout on empty st
 ### Task 14: Auto brief on terminal open
 
 **Files:**
-- Create: `src/render/auto.ts`, `src/cli/commands/brief-auto.ts`; modify `shell/leftoff.zsh`, `shell/leftoff.bash`, `shell/leftoff.fish` (`__leftoff_auto`)
-- Test: `tests/cli/brief-auto.test.ts`, `tests/render/auto.test.ts`
+- Create: `src/render/auto.ts`, `src/cli/commands/brief-auto.ts`, `src/ingest/background.ts`; modify `shell/leftoff.zsh`, `shell/leftoff.bash`, `shell/leftoff.fish` (`__leftoff_auto`), `src/cli/commands/internal.ts` (add `internal ingest`)
+- Test: `tests/cli/brief-auto.test.ts`, `tests/render/auto.test.ts`, `tests/ingest/background.test.ts`
 
 **Interfaces:**
 - Produces:
   - `isBriefDue(root: string, repo: Repo, config: Config, now: Date): boolean` — true iff `autoBrief.enabled`, `LEFTOFF_QUIET` unset, `lastActivity(root)` exists and is ≥ `gapHours` before `now`, and `briefShownFor(root)` < that activity.
   - `renderAutoBrief(f: BriefFacts): string` (≤ 8 lines, exact first/last lines §1.8)
-  - `runBriefAuto(cwd: string): Promise<string>` — 300 ms total budget; **no ingest** except the git working state; uses stored events only; marks shown.
+  - `runBriefAuto(cwd: string): Promise<string>` — 300 ms total budget; **no foreground ingest** except the git working state; uses stored events only; marks shown; calls `maybeSpawnBackgroundIngest` (never waits for it).
+  - `maybeSpawnBackgroundIngest(repo: Repo, now: Date): boolean` — if `cursors('ingest','last_bg')` is missing or ≥ 10 minutes old, writes `now` there and spawns `leftoff internal ingest` detached (`stdio: 'ignore'`, env `LEFTOFF_INTERNAL=1`, cwd `paths().tmp`, `unref()`); returns whether it spawned (R-D3).
+  - `runInternalIngest(): Promise<void>` — `acquireLock('ingest:bg', pid, 120_000)`; if false, return; `ingest` (all projects, default budget); release.
 
 Shell wiring: `__leftoff_auto` runs `leftoff brief --auto` on the first prompt of an interactive shell and on directory change into a different project (compare `git rev-parse --show-toplevel` output cached in a shell variable; fall back to `$PWD`). Output goes to the terminal (stderr is discarded).
 
@@ -915,6 +1016,8 @@ test('due after 4h gap, not due twice', ...);
 test('not due when LEFTOFF_QUIET=1 or autoBrief.enabled=false', ...);
 test('auto brief ≤ 8 lines with exact first and last lines', ...);
 test('runBriefAuto returns "" when over budget', ...);
+test('background ingest spawns at most once every 10 minutes; brief output does not wait for it', ...); // R-D3
+test('two concurrent internal ingests: only one runs (lock ingest:bg)', ...); // R-D3
 test('zsh: cd into project prints brief once', () => { /* zsh -fic with scripted cd; skip if zsh absent */ });
 ```
 
@@ -930,22 +1033,25 @@ test('zsh: cd into project prints brief once', () => { /* zsh -fic with scripted
 - Test: `tests/cli/{setup,doctor,status,forget,config,uninstall}.test.ts`
 
 **Interfaces:**
-- Consumes: `installShellHook`, `removeShellHook`, `installClaudePlugin`, `claudePluginInstalled`, `pickProviders`, `Repo`, `readRecentErrors`.
+- Consumes: `installShellScripts`, `installedShellScriptVersion`, `installShellHook`, `removeShellHook`, `installShim`, `shimStatus`, `installClaudePlugin`, `claudePluginInstalled`, `pickProviders`, `Repo`, `readRecentErrors`.
 - Produces:
   - `runSetup(io: Prompter, env: SetupEnv): Promise<SetupResult>` — `Prompter` = `{ confirm(q: string, def: boolean): Promise<boolean>; choose<T extends string>(q: string, options: T[], def: T): Promise<T>; input(q: string, def?: string): Promise<string> }` (implemented with `node:readline/promises`; tests inject a scripted prompter). `SetupEnv` = `{ home: string; shell: string; hasClaude: boolean; hasCodex: boolean; hasOllama: boolean }`.
   - `runDoctor(): Promise<{ checks: { name: string; ok: boolean; hint?: string }[]; exitCode: 0 | 1 }>`
   - `runStatus(): Promise<string>`, `runForget(opts: { project?: string; all: boolean; yes: boolean }, io: Prompter): Promise<string>`, `runConfig(args: string[]): Promise<{ output: string; exitCode: number }>`, `runUninstall(io: Prompter): Promise<string>`
 
-Setup steps, in order: (1) create home; (2) detect shells from `$SHELL` + existing rc files, offer to install hook into `~/.zshrc` / `~/.bashrc` / `~/.config/fish/config.fish`; (3) if Claude Code found, offer plugin install; (4) note Codex logs found or not; (5) polish: offer `off` (default), `claude-cli`, `codex-cli`, `ollama` (ask model), `anthropic`/`openai` (ask model, require env key), explaining in one line which ones send data off the machine; (6) print a summary and "Open a new terminal to start". Re-running setup shows current choices as defaults.
+Setup steps, in order: (1) create home; (1b) write the CLI shim with `installShim(process.execPath, <absolute path of the running dist/cli.js>)` and copy the shell scripts with `installShellScripts` — both on every run, so they always point at the current install (R-C4, R-B8); (2) detect shells from `$SHELL` + existing rc files, offer to install hook into `~/.zshrc` / `~/.bashrc` / `~/.config/fish/config.fish`; (3) if Claude Code found, offer plugin install; (4) note Codex logs found or not; (5) polish: offer `off` (default), `claude-cli`, `codex-cli`, `ollama` (ask model), `anthropic`/`openai` (ask model, require env key), explaining in one line which ones send data off the machine; (6) print a summary and "Open a new terminal to start". Re-running setup shows current choices as defaults.
 
-Doctor checks (each with a fix hint): Node ≥ 22; platform supported; home dir permissions; DB opens and `user_version` current; config valid; each rc hook block present; shell log received a line in the last 7 days (if hook installed); Claude plugin installed and a `session_start` event in the last 7 days (if Claude found); Codex sessions readable; malformed-line counts from last ingest; polish provider available (if not `off`); last 5 errors from the log.
+Doctor checks (each with a fix hint): Node ≥ 22.12; platform supported; home dir permissions; DB opens and `user_version` current; config valid; CLI shim exists and `shimStatus().works` (hint: "Run leftoff setup" — R-C4); each rc hook block present; copied shell scripts present and their `# leftoff <version>` header matches the running CLI version, warning otherwise (R-B8); shell log received a line in the last 7 days (if hook installed); Claude plugin installed and a `session_start` event in the last 7 days (if Claude found); Codex sessions readable; malformed-line counts from the last ingest report in `cursors('ingest','last_report')` (R-B10); polish provider available (if not `off`); last 5 errors from the log.
 
 - [ ] **Step 1: Write failing tests**
 
 ```ts
 test('setup with scripted answers installs zsh hook and writes config', ...);
 test('setup is idempotent', ...);
+test('setup writes the shim and copies shell scripts on every run', ...); // R-C4, R-B8
 test('doctor flags missing shell hook with hint "Run leftoff setup"', ...);
+test('doctor fails when the shim is missing or points at a CLI that no longer exists', ...); // R-C4
+test('doctor warns when copied shell scripts are from an older version', ...); // R-B8
 test('doctor exit code 1 when any check fails', ...);
 test('forget --project removes only that project', ...);
 test('config set/get/list round-trip and rejects unknown keys', ...);
@@ -961,7 +1067,7 @@ test('uninstall removes rc blocks and keeps data unless confirmed', ...);
 
 **Files:**
 - Create: `tests/e2e/rahul.e2e.test.ts`, `tests/e2e/perf.e2e.test.ts`, `tests/e2e/helpers.ts`
-- Modify: `.github/workflows/ci.yml` (add `npm run build` before e2e; run e2e on both OSes)
+- CI already runs `npm run test:e2e` after `build` on both OSes since Task 1 (R-A6); no workflow change expected.
 
 **Interfaces:**
 - Consumes: built CLI at `dist/cli.js`; fixtures from Tasks 4, 6, 7.
@@ -995,7 +1101,7 @@ test('ingest of 50 MB new transcript < 1500 ms', ...);
 test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...);
 ```
 
-- [ ] **Step 2: Run** `npm run build && npx vitest run tests/e2e` → fix anything failing in the owning module (with a regression test there).
+- [ ] **Step 2: Run** `npm run test:e2e` → fix anything failing in the owning module (with a regression test there).
 - [ ] **Step 3: Commit** `git commit -m "test: end-to-end scenario and performance budgets"`
 
 ---
@@ -1008,7 +1114,7 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 - Create: `docs/dogfood-log.md`, `docs/dogfood-checklist.md`
 - Modify: whatever modules the bugs live in (plus their tests)
 
-- [ ] **Step 1: Install locally (owner approves).** `npm run build && npm link` makes the `leftoff` command run the local build. The owner runs `leftoff setup` on their real machine, choosing their shells and the Claude Code plugin. Record the exact steps and any friction in `docs/dogfood-log.md`.
+- [ ] **Step 1: Install locally (owner approves).** `npm run build && npm link` makes the `leftoff` command run the local build. The owner runs `leftoff setup` on their real machine, choosing their shells and the Claude Code plugin (marketplace added from the local repo path — R-C8). The shim then points at the repo's `dist/cli.js`. Record the exact steps and any friction in `docs/dogfood-log.md`.
 - [ ] **Step 2: Daily use for at least 7 days** on at least 2 real projects with real Claude Code (and Codex if enabled) work. Each day the owner adds an entry to `docs/dogfood-log.md`: date; what `leftoff`, the auto brief and `leftoff resume` showed; correct / wrong / missing items; false "claimed done" alarms; anything slow; any error output.
 - [ ] **Step 3: Daily health checks** (put these commands in `docs/dogfood-checklist.md`): `leftoff doctor` exits 0; `~/.leftoff/logs/leftoff.log` has no new errors; `time leftoff resume` and `time leftoff` are within §1.12 budgets; a secret scan of the database finds nothing (`sqlite3 ~/.leftoff/leftoff.db .dump | grep -E "ghp_|sk-|AKIA|BEGIN .*PRIVATE KEY|password="` returns no lines).
 - [ ] **Step 4: Fix loop.** For every problem: reproduce it in a failing test in the owning module, fix it, run `npm run check`, commit `fix(<module>): <what>`, rebuild (`npm run build`; `npm link` picks it up), and note the fix in the log.
@@ -1033,7 +1139,7 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 - [ ] **Step 1: Confirm package identity.** `package.json` `name` is `@leftoff-dev/cli`, `bin` is `{"leftoff": "dist/cli.js"}`, `publishConfig.access` is `public`, `repository` points at `github.com/GITHUBTANMAY2003/leftoff`. Bump from the placeholder `0.0.1` to `1.0.0`. Plugin and marketplace manifests use the same repo URL.
 - [ ] **Step 2: README** — the one-line pitch and positioning from §1.1, a short "How leftoff differs from agent memory" section (Claude Code recap/auto memory, Codex Memories, claude-mem: they recall knowledge for the agent; leftoff tracks unfinished state for you, from ground truth, across tools), a demo GIF (record with `vhs demo/demo.tape` showing: close terminal → reopen → auto brief → `leftoff standup`), install (`npm i -g @leftoff-dev/cli && leftoff setup`), what is recorded and where, privacy section (local only, redaction, `forget`, polish providers that leave the machine), commands table from spec §1.10, troubleshooting = `leftoff doctor`, uninstall.
 - [ ] **Step 3: CONTRIBUTING + docs/adding-a-collector.md** — the `Collector` interface, fixture capture procedure from Task 6, test checklist (malformed lines, partial lines, dedupe, budget).
-- [ ] **Step 4: release.yml** — on tag `v*`: `npm ci && npm run check && npm run build`, then publish using **npm trusted publishing** (GitHub Actions OIDC, `id-token: write` permission, `npm publish --provenance --access public`; no stored token), and create a GitHub Release with the CHANGELOG section. The owner configures the trusted publisher on npmjs.com. Until that is set up, the owner publishes manually with `npm publish --access public`.
+- [ ] **Step 4: release.yml** — on tag `v*`: `npm ci && npm run check && npm run build && npm run test:e2e`, then publish using **npm trusted publishing** (GitHub Actions OIDC, `id-token: write` permission, `npm publish --provenance --access public`; no stored token), and create a GitHub Release with the CHANGELOG section. The owner configures the trusted publisher on npmjs.com. Until that is set up, the owner publishes manually with `npm publish --access public`.
 - [ ] **Step 5: Fresh-machine check** (Docker is only a clean Linux test machine here, not a shipping method — D13) — in a clean Docker `node:22` container and on a macOS machine: install from the packed tarball (`npm pack`), run `leftoff setup`, use Claude Code for 5 minutes, open a new terminal after setting `autoBrief.gapHours 0`, confirm the brief appears and `leftoff doctor` is all green. Record results in the PR.
 - [ ] **Step 6: Commit** `git commit -m "docs: readme, contributing, release workflow"`. The owner creates and pushes tag `v1.0.0` and publishes.
 
@@ -1042,5 +1148,6 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 ## Self-review notes
 
 - Spec coverage: §1.2 D1–D13 and §1.3 P1–P12 each map to tasks (D3/D4 → 4–7; D6 → 12; D7 → 10, 13, 14; D9 → 2; D10 → 8, 13, 15; D11 → 9, 10, 11, 18; D12 → 17; D13 → 18; P7 → 14; P10 → 3, 4, 12, 15; P11 → 10; P12 → 13, 18).
-- Interfaces: `Collector.collect` returns `{ events, pendingCursors, warnings }` everywhere (Tasks 4–8). `BriefFacts`/`OpenProblem`/`ClaimedDone`/`LooseEnds` defined once in §1.7 and used by Tasks 9–14.
+- Interfaces: `Collector.collect` returns `{ events, pendingCursors, warnings }` everywhere (Tasks 4–8); optional `Collector.afterCommit` runs only after a successful commit (R-B5).
+- Plan review decisions (R-*) from `docs/reports/task-00-plan-review.md` are listed after §1.3 and applied in the sections and tasks named there. `BriefFacts`/`OpenProblem`/`ClaimedDone`/`LooseEnds` defined once in §1.7 and used by Tasks 9–14.
 - Review Focus items each have a named test in their owning task.
