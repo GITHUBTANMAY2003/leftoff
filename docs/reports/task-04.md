@@ -477,4 +477,38 @@ All matched files use Prettier code style!
 
 ## 10. Commit
 
-To be filled in by Task 5's commit (B11). The commit message is `feat(shell): shell hooks, shell collector, rc installer`.
+Commit `8476acf`, message `feat(shell): shell hooks, shell collector, rc installer`.
+
+```
+$ git show --stat --format='%h %s' 8476acf
+8476acf feat(shell): shell hooks, shell collector, rc installer
+
+ docs/PROGRESS.md                    |   6 +-
+ docs/leftoff-implementation-plan.md |   4 +-
+ docs/reports/task-03.md             |  27 +-
+ docs/reports/task-04.md             | 480 ++++++++++++++++++++++++++++++++++++
+ shell/leftoff.bash                  |  57 +++++
+ shell/leftoff.fish                  |  40 +++
+ shell/leftoff.zsh                   |  40 +++
+ src/collectors/shell.ts             | 233 +++++++++++++++++
+ src/collectors/types.ts             |  27 ++
+ src/install/shell-rc.ts             |  82 ++++++
+ src/model/redact.ts                 |   4 +
+ tests/collectors/shell.test.ts      | 295 ++++++++++++++++++++++
+ tests/fixtures/shell/basic.log      |   5 +
+ tests/install/shell-rc.test.ts      | 159 ++++++++++++
+ tests/model/redact.test.ts          |  19 ++
+ tests/shell/hooks.test.ts           | 213 ++++++++++++++++
+ tests/shell/run-shell.ts            |  37 +++
+ 17 files changed, 1722 insertions(+), 6 deletions(-)
+```
+
+**CI result (owner):** red on all 6 jobs. Everything passed except 4 fish hook tests, reproduced by the owner on Linux (Node 22, fish 3.7). Root cause: fish does not emit `fish_preexec`/`fish_postexec` when commands come from piped stdin, even with `-i`. The hook script itself was correct, as the owner confirmed under a pty. Fixed in Task 5's commit by running fish under `script` (see task-05.md §4, Part A).
+
+Owner's answers:
+- §8.1: keep the JSON-map cursor.
+- §8.2: keep `-1` on all bash versions; no `PS0` trick.
+- §8.3–8.5: approved.
+- §9.2: fine; Task 16 measures it.
+- §9.4: move the glob helper to a shared module in Task 6 and apply `ignore.projects` in the Claude and Codex collectors.
+- §9.5: accepted.

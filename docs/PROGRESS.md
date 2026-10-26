@@ -11,8 +11,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 | 1 | Project scaffold, paths, config, logger ([report](reports/task-01.md)) | done | `f52dd1e` | None in scope. Clarifications: 25 tests beyond the plan's list; `setConfigValue` also saves; `package.json` gets `description` and `license` early |
 | 2 | SQLite store and repository ([report](reports/task-02.md)) | done | `5a475af` | `ON CONFLICT(dedupe_key) DO NOTHING` instead of `INSERT OR IGNORE` (which hid NOT NULL errors); WAL switch retried on SQLITE_BUSY (race found by tests); owner-requested integer rule for count config keys folded in |
 | 3 | Event model, redaction, project resolution ([report](reports/task-03.md)) | done | `017b1d1` | `pass`/`auth` match only as name segments (avoids redacting `--author`, `passport`) — confirmed by owner; `redactDeep` also redacts values under secret-named keys. Fold-ins: unreadable event rows skipped; plan text lines |
-| 4 | Shell hook scripts and shell collector ([report](reports/task-04.md)) | done | (filled in by Task 5) | One JSON-map cursor row instead of one per `*.ingesting` file (awaiting owner); bash duration `-1` on all versions (awaiting owner); rotated name `shell.log.<ms>.<pid>.ingesting`; abandoned partial lines dropped after 60 s instead of appended back. fish script untested locally (CI only). Fold-ins: mysql/sshpass redaction; plan text |
-| 5 | Git collector | not started | | |
+| 4 | Shell hook scripts and shell collector ([report](reports/task-04.md)) | done | `8476acf` | One JSON-map cursor row instead of one per `*.ingesting` file (approved); bash duration `-1` on all versions (approved); rotated name `shell.log.<ms>.<pid>.ingesting`; abandoned partial lines dropped after 60 s instead of appended back. CI was red: fish tests needed a pty (fixed in Task 5). Fold-ins: mysql/sshpass redaction; plan text |
+| 5 | Git collector ([report](reports/task-05.md)) | done | (filled in by Task 6) | Git cursor is JSON `{ commit, reflogAt, reflogKeys }`; `<cursor>..HEAD` bounded by `retentionDays`; `git diff --shortstat HEAD`; no `symbolic-ref` call. Also: fish tests run under a pty (`script`); redaction fix for in-word `-name` "flags" (found by the §1.1 names) |
 | 6 | Incremental JSONL reader and Claude Code collector | not started | | |
 | 7 | Codex CLI collector | not started | | |
 | 8 | Ingest orchestrator | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 5: Git collector.** Waiting for the owner's `continue`, the answers to Task 4 report §8.1 (cursor map) and §8.2 (bash duration), and the CI result for the fish tests.
+**Task 6: Incremental JSONL reader and Claude Code collector.** Needs the owner: a real Claude Code session for fixtures. Open decision from Task 5 §9.1: filter commits to your own author email and skip merges?

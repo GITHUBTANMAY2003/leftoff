@@ -52,6 +52,25 @@ test.each([
   'https://example.com/a/b?page=2',
 ])('redact leaves %j unchanged', (input) => expect(redact(input)).toBe(input));
 
+// Regression (found by the git collector, Task 5): a "-name" inside a word is
+// not a flag. These are the §1.1 scenario's own branch and commit.
+test.each([
+  'git commit -m "Added reset-token migration"',
+  'Added reset-token migration', // a commit subject, as the git collector stores it
+  'git checkout feature/forgot-password',
+  'Switched from feature/forgot-password to main',
+  'npm run reset-password -- --dry-run',
+])('a -name inside a word is not a flag: %j is unchanged', (input) =>
+  expect(redact(input)).toBe(input),
+);
+
+test.each([
+  ['-password hunter2 at the start', '-password [REDACTED] at the start'],
+  ['tool\t--token abc', 'tool\t--token [REDACTED]'],
+])('a flag at the start or after whitespace is still redacted: %j', (input, expected) =>
+  expect(redact(input)).toBe(expected),
+);
+
 test('"Authorization: Bearer x" is handled by the Bearer rule, not the auth-assignment rule', () => {
   // R-D6: the header name must stay, only the token goes.
   expect(redact('Authorization: Bearer x1y2z3')).toBe('Authorization: Bearer [REDACTED]');

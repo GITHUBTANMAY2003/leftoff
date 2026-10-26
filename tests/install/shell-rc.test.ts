@@ -141,12 +141,12 @@ test('installShellScripts overwrites older copies; version is null when not inst
 
 test.skipIf(!hasShell('zsh'))(
   'end to end: setup-style install into a temp ZDOTDIR records a command from a real zsh',
-  () => {
+  async () => {
     installShellScripts(PACKAGE_SHELL_DIR, '0.0.1');
     installShellHook('zsh', join(tmp, '.zshrc'), join(paths().shellDir, 'leftoff.zsh'));
     mkdirSync(join(tmp, 'work'));
     // -d: skip /etc/zshrc; ZDOTDIR makes zsh read our temp .zshrc.
-    runInteractive(
+    await runInteractive(
       'zsh',
       ['PS1=', `cd ${join(tmp, 'work')}`, 'echo e2e', 'exit'],
       { HOME: tmp, ZDOTDIR: tmp, LEFTOFF_HOME: join(tmp, 'lhome') },

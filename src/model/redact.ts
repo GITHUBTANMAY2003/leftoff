@@ -40,11 +40,14 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
     /([A-Za-z_][A-Za-z0-9_.-]*)=("[^"]*"|'[^']*'|[^\s"'&]+)/g,
     (whole, name) => (isSecretName(name as string) ? `${name}=${R}` : (whole as string)),
   ],
-  // --name value (the value must not look like the next flag)
+  // --name value. A flag starts the text or follows whitespace ("-token" in
+  // "reset-token" is not one), and its value must not look like the next flag.
   [
-    /(--?[A-Za-z][A-Za-z0-9_-]*)(\s+)("[^"]*"|'[^']*'|[^\s"'-][^\s"']*)/g,
-    (whole, flag, space) =>
-      isSecretName((flag as string).replace(/^-+/, '')) ? `${flag}${space}${R}` : (whole as string),
+    /(^|\s)(--?[A-Za-z][A-Za-z0-9_-]*)(\s+)("[^"]*"|'[^']*'|[^\s"'-][^\s"']*)/g,
+    (whole, before, flag, space) =>
+      isSecretName((flag as string).replace(/^-+/, ''))
+        ? `${before}${flag}${space}${R}`
+        : (whole as string),
   ],
 ];
 

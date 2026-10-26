@@ -309,7 +309,7 @@ src/
   model/redact.ts                   secret redaction
   model/project.ts                  resolveProject()
   collectors/types.ts               Collector interface
-  collectors/git.ts shell.ts claude.ts codex.ts registry.ts
+  collectors/git.ts shell.ts claude.ts codex.ts registry.ts ignore.ts (shared ignore globs, Task 6)
   collectors/jsonl-reader.ts        incremental JSONL reading (plain; zst only if Task 7 needs it)
   ingest/ingest.ts                  run collectors with isolation, pruning
   ingest/background.ts              detached background ingest, rate-limited (Task 14)
@@ -543,13 +543,13 @@ Every redaction pattern that starts with a literal prefix (`sk-`, `gh…_`, `xox
 
 Shell log line format (one line per command, tab-separated): `ts_epoch_ms \t exit_code \t duration_ms \t pid \t cwd \t command` with tabs/newlines in `cwd`/`command` replaced by spaces; `duration_ms` is `-1` when unknown. `cwd` is the directory where the command started. Scripts:
 - zsh: `zmodload zsh/datetime`; `preexec` stores `$EPOCHREALTIME`, `$PWD` and the command; `precmd` appends the line; `chpwd` and first prompt call `leftoff brief --auto` (Task 14 wires this; leave a function `__leftoff_auto` that is a no-op if `leftoff` is missing).
-- bash: `PROMPT_COMMAND` prepended (preserve existing; capture `$?` first), uses `history 1`; record only if the history number changed. **Must work on bash 3.2** (the default `/bin/bash` on macOS): no associative arrays, no `PS0`, no `${var,,}`, no `mapfile`; `PROMPT_COMMAND` may be a string, not an array. Timing (R-B7): bash ≥ 5 uses `$EPOCHREALTIME`; bash < 5 has no millisecond clock and no start-of-command hook, so it writes `ts` = `$(date +%s)` × 1000 and `duration_ms` = `-1`, and `cwd` = `$PWD` at prompt time. Test against `/bin/bash` on macOS CI.
+- bash: `PROMPT_COMMAND` prepended (preserve existing; capture `$?` first), uses `history 1`; record only if the history number changed. **Must work on bash 3.2** (the default `/bin/bash` on macOS): no associative arrays, no `PS0`, no `${var,,}`, no `mapfile`; `PROMPT_COMMAND` may be a string, not an array. Timing (R-B7, owner decision after Task 4): the timestamp comes from `$EPOCHREALTIME` on bash ≥ 5 and from `$(date +%s)` × 1000 on bash < 5. The `history 1` approach runs only after a command, so there is no start time on any bash version: `duration_ms` is always `-1` (no `PS0` trick), and `cwd` = `$PWD` at prompt time. Test against `/bin/bash` on macOS CI.
 - fish: `fish_preexec` / `fish_postexec` events; duration from `$CMD_DURATION`.
 - All: skip if command starts with a space, if `LEFTOFF_INTERNAL=1`, or if the log dir is missing. Never print. File created with `umask 077`. Each line is written with a single `printf … >>` so concurrent shells append whole lines.
 
 rc block (R-B8): delimited by `# >>> leftoff >>>` / `# <<< leftoff <<<`, sources the **copied** script in `~/.leftoff/shell/` behind a guard so a missing file never prints an error — zsh/bash: `[ -r "$HOME/.leftoff/shell/leftoff.zsh" ] && . "$HOME/.leftoff/shell/leftoff.zsh"`; fish: `test -r …; and source …` (paths follow `LEFTOFF_HOME` when set at install time).
 
-Collector (R-B6): `collect` first atomically renames `shell.log` → `shell.log.<pid>.ingesting` (if a previous `*.ingesting` file exists from a crashed run, it is processed first), so shells keep appending to a fresh `shell.log` and no line is lost. It splits complete lines only, emits `command` (exit 0) / `command_failed` (exit ≠ 0) with `summary` = redacted command (failed: `` `cmd` exited 1 ``), `sessionRef` = `shell:<pid>`, `data` = `{ exitCode, durationMs, cwd }` (`durationMs: null` when the log says `-1`). Lines whose cwd matches `config.ignore.projects` globs, commands matching `config.ignore.commands`, or inside `LEFTOFF_HOME` are dropped. A partial last line is kept. `afterCommit` deletes the `*.ingesting` file, first appending any kept partial line to `shell.log`. If ingest does not commit (error or timeout), the `*.ingesting` file stays and is processed on the next run; the byte cursor (key = the `*.ingesting` file name) prevents re-reading committed lines.
+Collector (R-B6): `collect` first atomically renames `shell.log` → `shell.log.<ms>.<pid>.ingesting` (unique, and sorting by name processes leftovers oldest first) (if a previous `*.ingesting` file exists from a crashed run, it is processed first), so shells keep appending to a fresh `shell.log` and no line is lost. It splits complete lines only, emits `command` (exit 0) / `command_failed` (exit ≠ 0) with `summary` = redacted command (failed: `` `cmd` exited 1 ``), `sessionRef` = `shell:<pid>`, `data` = `{ exitCode, durationMs, cwd }` (`durationMs: null` when the log says `-1`). Lines whose cwd matches `config.ignore.projects` globs, commands matching `config.ignore.commands`, or inside `LEFTOFF_HOME` are dropped. A partial last line is not consumed. `afterCommit` deletes an `*.ingesting` file only when every byte of it has been committed; a file with unread bytes (a partial line, or a line a shell finished writing after the rename) is kept and read again next run. A partial line in a file nobody has written to for 60 s can never be finished: it is counted as malformed and consumed, never appended back to the live `shell.log`. A single line longer than `ingest.maxBytesPerFilePerRun` is skipped as malformed. If ingest does not commit (error or timeout), the `*.ingesting` file stays and is processed on the next run. Cursor (owner decision after Task 4): **one** row `('shell', 'ingesting')` whose value is a JSON map `{ "<file name>": <committed byte offset> }`, so cursor rows don't pile up for files that no longer exist (`Repo` has no `deleteCursor`).
 
 - [ ] **Step 1: Write failing tests**
 
@@ -569,10 +569,15 @@ test('real zsh records a command line', () => {
   expect(readFileSync(log, 'utf8')).toMatch(/\t0\t\d+\t\d+\t.*\techo hi\n$/);
 });
 test.each(['bash', 'fish'])('%s hook records a command line', ...); // skip when the binary is missing (R-D7)
-test('bash 3.2 (/bin/bash on macOS) writes duration -1, collector stores durationMs null', ...); // R-B7
+// The hook tests type commands into real interactive shells fed from stdin. fish only emits
+// fish_preexec/fish_postexec when reading from a terminal, so fish runs under a pseudo-terminal
+// made by `script` (util-linux: `script -qec "<cmd>" /dev/null`; macOS: `script -q /dev/null <cmd>`),
+// skipped with a stated reason when neither form works. Tests that check "records nothing" also
+// show, in the same run, that a normal command IS recorded once the condition is removed.
+test('bash writes duration -1 (every version), collector stores durationMs null', ...); // R-B7
 test('leading-space command is not recorded', ...);
 test('lines appended after the rename land in the new shell.log and are read next run', ...); // R-B6
-test('afterCommit deletes the ingesting file and keeps a partial last line', ...); // R-B6
+test('afterCommit deletes a fully committed ingesting file and keeps one with unread bytes', ...); // R-B6
 test('installShellScripts copies scripts with a version header and mode 0600', ...); // R-B8
 test('rc block sources the copied script behind a [ -r ] guard; missing script prints nothing', ...); // R-B8
 test('installShellHook is idempotent and removable', () => {
@@ -665,6 +670,7 @@ test('first run (no cursors) only considers files modified within retentionDays'
 
 - [ ] **Step 3: Run** → FAIL. **Step 4: Implement.**
   - Base directory: `$CLAUDE_CONFIG_DIR` if set, else `$HOME/.claude` (R-C6).
+  - Ignored projects (owner decision after Task 4): move the glob helper from `src/collectors/shell.ts` to a shared module (`src/collectors/ignore.ts`) and drop events whose project root (or a folder above it) matches `config.ignore.projects`, exactly as the shell collector does.
   - Discovery: union of transcript paths from `session_start`/`checkpoint`/`session_end` hook events and files under `<base>/projects/` with mtime newer than the newest stored claude cursor update minus 1 day; with no claude cursors yet, mtime within the last `retentionDays` (R-D4).
   - Mapping (from the fixtures): user text messages → `user_prompt`; assistant text → `agent_message` (keep last 300 chars); tool uses named `Edit`/`Write`/`MultiEdit`/`NotebookEdit` → `file_edit` with `data.path`; `Bash` → `command` with the command string; a tool result flagged as an error → `command_failed` (if its tool use was Bash) else `tool_error`; a Bash result whose output matches `/\b(\d+ (failed|failing)|FAIL\b|AssertionError|Tests?:\s+\d+ failed)/` → also `test_failed`. Tool results are matched to tool uses by id within the file (keep a per-file map of the last 500 tool uses in the cursor value as JSON if needed, or re-derive from the record).
   - Dedupe key: `dedupeKey('claude', file, endOffset, index)`.
@@ -700,7 +706,7 @@ test('CODEX_HOME relocates the sessions directory', ...); // R-C6
 test('unknown record types ignored', ...);
 ```
 
-- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** Base directory: `$CODEX_HOME` if set, else `$HOME/.codex` (R-C6). Plain files: byte cursor as in Task 6. `.zst` (if supported): cursor value = `JSON.stringify({ size, mtimeMs, lines })`; when size or mtime changes, decompress and skip the first `lines` records. Map records using the fixtures (session metadata → project; user/assistant messages; shell/function calls → `command`; their outputs with non-zero exit → `command_failed`; patch/apply events → `file_edit`). **Step 5: Run** `npm run check` → PASS.
+- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** Base directory: `$CODEX_HOME` if set, else `$HOME/.codex` (R-C6). Events whose project matches `config.ignore.projects` are dropped, using the shared helper from Task 6. Plain files: byte cursor as in Task 6. `.zst` (if supported): cursor value = `JSON.stringify({ size, mtimeMs, lines })`; when size or mtime changes, decompress and skip the first `lines` records. Map records using the fixtures (session metadata → project; user/assistant messages; shell/function calls → `command`; their outputs with non-zero exit → `command_failed`; patch/apply events → `file_edit`). **Step 5: Run** `npm run check` → PASS.
 - [ ] **Step 6: Commit** `git commit -m "feat(codex): codex collector with plain and zstd rollouts"`
 
 ---
