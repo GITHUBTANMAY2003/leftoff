@@ -608,6 +608,8 @@ test('installShellHook is idempotent and removable', () => {
 
 All git calls via `execFile` with `timeout: 1000` and `maxBuffer: 1_000_000`; failure → collector warning, not a throw.
 
+Only your own commits (owner decision after Task 5): `commit` events are limited to commits whose author email equals that repo's own `git config user.email` (read per repo, matched case-insensitively), and merge commits are skipped (`--no-merges`), so teammates' commits arriving with `git pull` never show as Done or in the standup. If `user.email` isn't set, all commits are kept and that is logged once per repo. The cursor is one row per project: JSON `{ commit, reflogAt, reflogKeys, noEmailLogged }`.
+
 - [ ] **Step 1: Write failing tests** (temp repos)
 
 ```ts

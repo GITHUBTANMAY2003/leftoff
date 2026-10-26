@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { gitCollector, readWorkingState } from '../../src/collectors/git.ts';
 import type { CollectContext, CollectResult } from '../../src/collectors/types.ts';
 import { DEFAULT_CONFIG, type Config } from '../../src/core/config.ts';
+import { readRecentErrors } from '../../src/core/logger.ts';
 import { ensureHome, paths } from '../../src/core/paths.ts';
 import { makeEvent } from '../../src/model/event.ts';
 import { openDb } from '../../src/store/db.ts';
@@ -15,11 +16,24 @@ import { commit, git, initRepo } from '../helpers/git.ts';
 let tmp: string;
 let db: Database;
 let ctx: CollectContext;
-const saved = { home: process.env.LEFTOFF_HOME, path: process.env.PATH };
+const saved = {
+  home: process.env.LEFTOFF_HOME,
+  path: process.env.PATH,
+  globalConfig: process.env.GIT_CONFIG_GLOBAL,
+  noSystem: process.env.GIT_CONFIG_NOSYSTEM,
+};
+const restore = (key: string, value: string | undefined) => {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+};
 
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'leftoff-git-')));
   process.env.LEFTOFF_HOME = join(tmp, 'lhome');
+  // The collector's own git calls must not see the developer's global config
+  // (their user.email would decide which commits count).
+  process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
   ensureHome();
   db = openDb();
   ctx = {
@@ -32,6 +46,8 @@ beforeEach(() => {
 afterEach(() => {
   db.close();
   process.env.PATH = saved.path;
+  restore('GIT_CONFIG_GLOBAL', saved.globalConfig);
+  restore('GIT_CONFIG_NOSYSTEM', saved.noSystem);
   if (saved.home === undefined) delete process.env.LEFTOFF_HOME;
   else process.env.LEFTOFF_HOME = saved.home;
   rmSync(tmp, { recursive: true, force: true });
@@ -177,6 +193,59 @@ describe('gitCollector', () => {
     const r = await gitCollector.collect(ctx);
     expect(r.events).toEqual([]);
     expect(r.warnings).toEqual([expect.stringMatching(/git/)]);
+  });
+});
+
+describe('gitCollector: only your own commits (owner decision after Task 5)', () => {
+  test("a teammate's commit after a pull is excluded, and the pull's merge commit is skipped", async () => {
+    const upstream = initRepo(tmp, 'upstream', 'main', 'mate@example.com');
+    commit(upstream, 'teammate base', undefined, 'mate@example.com');
+    git(tmp, ['clone', '-q', upstream, 'clone']);
+    const root = realpathSync(join(tmp, 'clone'));
+    git(root, ['config', 'user.email', 't@example.com']);
+    commit(root, 'my work');
+    commit(upstream, 'teammate change', undefined, 'mate@example.com');
+    git(root, ['pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main']);
+    expect(git(root, ['log', '-1', '--format=%s'])).toMatch(/^Merge branch/);
+    track(root);
+    expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['my work']);
+  });
+
+  test('user.email is read per repo: two repos, two different "you"s', async () => {
+    const work = initRepo(tmp, 'work', 'main', 'me@work.example');
+    const hobby = initRepo(tmp, 'hobby', 'main', 'me@home.example');
+    for (const root of [work, hobby]) {
+      commit(root, `${root === work ? 'work' : 'hobby'} by work-me`, undefined, 'me@work.example');
+      commit(root, `${root === work ? 'work' : 'hobby'} by home-me`, undefined, 'me@home.example');
+      track(root);
+    }
+    const r = await gitCollector.collect(ctx);
+    const byRoot = (root: string) =>
+      r.events.filter((e) => e.kind === 'commit' && e.projectRoot === root).map((e) => e.summary);
+    expect(byRoot(work)).toEqual(['work by work-me']);
+    expect(byRoot(hobby)).toEqual(['hobby by home-me']);
+  });
+
+  test('the email match ignores case', async () => {
+    const root = initRepo(tmp, 'app', 'main', 'Me@Example.com');
+    commit(root, 'mine', undefined, 'me@example.COM');
+    track(root);
+    expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['mine']);
+  });
+
+  test('user.email unset: all commits are kept and it is logged once', async () => {
+    const root = initRepo(tmp, 'app', 'main', null);
+    commit(root, 'mine', undefined, 'me@example.com');
+    commit(root, 'theirs', undefined, 'mate@example.com');
+    track(root);
+    const first = await gitCollector.collect(ctx);
+    expect(summaries(first, 'commit')).toEqual(['mine', 'theirs']);
+    await commitResult(first);
+    commit(root, 'later', undefined, 'mate@example.com');
+    expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['later']);
+    const logged = readRecentErrors(20).filter((l) => l.includes('user.email'));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(root);
   });
 });
 

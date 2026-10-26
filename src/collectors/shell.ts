@@ -8,12 +8,11 @@ import {
   statSync,
   unlinkSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import type { Config } from '../core/config.ts';
+import { join } from 'node:path';
 import { paths } from '../core/paths.ts';
-import { dedupeKey, makeEvent, normalizeCommand, type WorkEvent } from '../model/event.ts';
+import { dedupeKey, makeEvent, type WorkEvent } from '../model/event.ts';
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
+import { compileIgnore } from './ignore.ts';
 import type { CollectContext, CollectResult, Collector } from './types.ts';
 
 // Reads the lines the shell hooks append to shell.log (plan Task 4):
@@ -29,47 +28,6 @@ const CURSOR_KEY = 'ingesting'; // value: JSON { [file name]: committed byte off
 const INGESTING = /^shell\.log\.[\w.-]+\.ingesting$/;
 const ABANDONED_MS = 60_000; // a partial last line untouched this long will never be finished
 const NEWLINE = 0x0a;
-
-interface Filters {
-  projects: RegExp[];
-  commands: RegExp[];
-}
-
-function globToRegExp(glob: string, pathMode: boolean): RegExp {
-  let re = '';
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i] as string;
-    if (c === '*' && glob[i + 1] === '*') {
-      re += '.*';
-      i++;
-    } else if (c === '*') {
-      re += pathMode ? '[^/]*' : '.*';
-    } else if (c === '?') {
-      re += pathMode ? '[^/]' : '.';
-    } else {
-      re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-  return new RegExp(`^${re}$`);
-}
-
-function compileFilters(config: Config): Filters {
-  const expand = (g: string) => (g === '~' || g.startsWith('~/') ? homedir() + g.slice(1) : g);
-  return {
-    projects: config.ignore.projects.map((g) => globToRegExp(resolve(expand(g)), true)),
-    commands: config.ignore.commands.map((g) => globToRegExp(g, false)),
-  };
-}
-
-// A folder is ignored when it or any folder above it matches a glob, so
-// ignoring ~/secret also ignores ~/secret/app/src.
-function isIgnoredDir(cwd: string, globs: RegExp[]): boolean {
-  if (globs.length === 0) return false;
-  for (let dir = cwd; ; dir = dirname(dir)) {
-    if (globs.some((g) => g.test(dir))) return true;
-    if (dirname(dir) === dir) return false;
-  }
-}
 
 interface ParsedLine {
   tsMs: number;
@@ -181,7 +139,7 @@ export const shellCollector: Collector = {
     if (files.length === 0) return result;
 
     const committed = readOffsets(ctx.repo.getCursor('shell', CURSOR_KEY));
-    const filters = compileFilters(ctx.config);
+    const ignore = compileIgnore(ctx.config);
     const next: Record<string, number> = {};
     for (const name of files) {
       const file = join(shellDir, name);
@@ -196,9 +154,8 @@ export const shellCollector: Collector = {
         }
         if (parsed.command.startsWith(' ')) continue; // the hooks skip these; belt and braces
         if (isInsideLeftoffHome(parsed.cwd)) continue; // recursion guard (§1.9)
-        if (isIgnoredDir(parsed.cwd, filters.projects)) continue;
-        const normalized = normalizeCommand(parsed.command);
-        if (filters.commands.some((g) => g.test(normalized))) continue;
+        if (ignore.isIgnoredProject(parsed.cwd)) continue;
+        if (ignore.isIgnoredCommand(parsed.command)) continue;
         result.events.push(toEvent(raw, parsed));
       }
       let offset = chunk.next;

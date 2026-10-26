@@ -97,6 +97,7 @@ interface GitCursor {
   commit: string | null;
   reflogAt: string | null;
   reflogKeys: string[];
+  noEmailLogged: boolean; // "user.email not set" is logged once per repo, not every run
 }
 
 function readCursor(value: string | null): GitCursor {
@@ -108,17 +109,33 @@ function readCursor(value: string | null): GitCursor {
       reflogKeys: Array.isArray(c.reflogKeys)
         ? c.reflogKeys.filter((k) => typeof k === 'string')
         : [],
+      noEmailLogged: c.noEmailLogged === true,
     };
   } catch {
-    return { commit: null, reflogAt: null, reflogKeys: [] };
+    return { commit: null, reflogAt: null, reflogKeys: [], noEmailLogged: false };
   }
 }
 
 const iso = (date: Date | string | number) => new Date(date).toISOString();
 
+// "You" in this repo: its own user.email (it can differ between repos).
+async function userEmail(root: string): Promise<string | null> {
+  try {
+    return (await git(root, ['config', '--get', 'user.email'])).trim() || null;
+  } catch (err) {
+    if ((err as GitError).kind === 'failed') return null; // exit 1: not set
+    throw err;
+  }
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Only your own commits count as done work (owner decision after Task 5): a
+// teammate's commits arrive on HEAD with every pull. Merge commits are skipped.
 async function readCommits(
   root: string,
   cursor: string | null,
+  email: string | null,
   ctx: CollectContext,
 ): Promise<{ events: WorkEvent[]; head: string | null }> {
   let head: string;
@@ -129,9 +146,11 @@ async function readCommits(
     throw err;
   }
   const format = `--format=%H${FIELD}%aI${FIELD}%s${RECORD}`;
+  const filters = ['--no-merges', ...(email ? ['-i', `--author=<${escapeRegExp(email)}>`] : [])];
   const firstRun = [
     'log',
     format,
+    ...filters,
     `--since=${iso(ctx.now.getTime() - FIRST_RUN_DAYS * DAY_MS)}`,
     'HEAD',
   ];
@@ -141,7 +160,7 @@ async function readCommits(
   } else {
     const retention = `--since=${iso(ctx.now.getTime() - ctx.config.retentionDays * DAY_MS)}`;
     try {
-      out = await git(root, ['log', format, retention, `${cursor}..HEAD`]);
+      out = await git(root, ['log', format, ...filters, retention, `${cursor}..HEAD`]);
     } catch (err) {
       if ((err as GitError).kind !== 'failed') throw err;
       out = await git(root, firstRun); // cursor commit gone (rebase + gc); dedupe absorbs repeats
@@ -243,13 +262,21 @@ export const gitCollector: Collector = {
       if (isInsideLeftoffHome(root)) continue; // recursion guard (§1.9)
       try {
         const cursor = readCursor(ctx.repo.getCursor('git', root));
-        const commits = await readCommits(root, cursor.commit, ctx);
+        const email = await userEmail(root);
+        if (email === null && !cursor.noEmailLogged) {
+          logError(
+            'git',
+            `user.email is not set in ${root}; counting every author's commits as yours`,
+          );
+        }
+        const commits = await readCommits(root, cursor.commit, email, ctx);
         const switches = await readSwitches(root, cursor, ctx);
         result.events.push(...commits.events, ...switches.events);
         const next: GitCursor = {
           commit: commits.head ?? cursor.commit,
           reflogAt: switches.at,
           reflogKeys: switches.keys,
+          noEmailLogged: email === null,
         };
         result.pendingCursors.push({ key: root, value: JSON.stringify(next) });
       } catch (err) {

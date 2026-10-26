@@ -395,4 +395,25 @@ All matched files use Prettier code style!
 
 ## 10. Commit
 
-To be filled in by Task 6's commit (B11). The commit message is `feat(git): git collector and working state`.
+Commit `166ee39`, message `feat(git): git collector and working state`. The owner approved the fish results before the commit.
+
+```
+$ git show --stat --format='%h %s' 166ee39
+166ee39 feat(git): git collector and working state
+
+ docs/PROGRESS.md                    |   6 +-
+ docs/leftoff-implementation-plan.md |  18 +-
+ docs/reports/task-04.md             |  36 +++-
+ docs/reports/task-05.md             | 398 ++++++++++++++++++++++++++++++++++++
+ src/collectors/git.ts               | 316 ++++++++++++++++++++++++++++
+ src/model/redact.ts                 |  11 +-
+ tests/collectors/git.test.ts        | 260 +++++++++++++++++++++++
+ tests/helpers/git.ts                |  44 ++++
+ tests/install/shell-rc.test.ts      |   4 +-
+ tests/model/redact.test.ts          |  19 ++
+ tests/shell/hooks.test.ts           | 179 ++++++++++------
+ tests/shell/run-shell.ts            | 113 +++++++++-
+ 12 files changed, 1312 insertions(+), 92 deletions(-)
+```
+
+Owner's answer to §9.1: approved, in Task 6's commit. Only commits whose author email equals that repo's `user.email` (read per repo); skip merge commits; if `user.email` is unset, don't filter and log it once. Tests required: a teammate's commit after a pull is excluded; different emails in two repos; `user.email` unset. Done in Task 6.
