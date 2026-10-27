@@ -5,13 +5,13 @@ Done
   • Added reset-token migration
 
 Unfinished
-  • email_service.py (modified, uncommitted)
+  • email_service.py (modified)
 
 Open problems
-  ✗ SMTP connection refused
+  ✗ `python scripts/send_test_email.py` — SMTP connection refused
     tried: changed port to 587 · disabled TLS
 
 Next step
-  → Resolve: SMTP connection refused
+  → Resolve: `python scripts/send_test_email.py` — SMTP connection refused
 
 Sources: claude ✓  git ✓  shell ✓  codex –

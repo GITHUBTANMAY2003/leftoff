@@ -27,6 +27,8 @@ export interface BriefFacts {
 }
 export interface OpenProblem {
   error: string;
+  command: string | null; // normalized; shown before the error (owner decision after Task 10)
+  isTest: boolean; // one of its failures is a failed test run (loose ends count tests)
   source: Source;
   firstSeen: string;
   attempts: string[];
@@ -45,6 +47,7 @@ export interface LooseEnds {
   claimedDone: ClaimedDone | null;
   openProblems: OpenProblem[];
   uncommittedCount: number;
+  gitUnavailable: boolean; // git status failed or timed out: "? git status unavailable"
 }
 
 const DAY_MS = 86_400_000;
@@ -70,15 +73,26 @@ const firstLine = (text: string) =>
 const commandOf = (e: WorkEvent): string | null =>
   typeof e.data.command === 'string' ? normalizeCommand(e.data.command) : null;
 
-// The error to show: the first line of data.error when there is one.
+// The error to show: the first line of data.error when there is one. A
+// command that failed without any output shows its exit code instead (the
+// command itself is shown next to it, see problemText).
 function errorOf(failures: WorkEvent[]): string {
   const withError = [...failures]
     .reverse()
     .find((f) => typeof f.data.error === 'string' && f.data.error.trim());
-  return withError
-    ? firstLine(withError.data.error as string)
-    : (failures.at(-1) as WorkEvent).summary;
+  if (withError) return firstLine(withError.data.error as string);
+  const newest = failures.at(-1) as WorkEvent;
+  if (commandOf(newest) === null) return newest.summary;
+  return typeof newest.data.exitCode === 'number' ? `exit code ${newest.data.exitCode}` : 'failed';
 }
+
+// How an open problem reads everywhere: the failing command first, then the
+// error (`npm run lint` — Missing script: "lint"); the error alone without a
+// command.
+export const problemText = (p: OpenProblem): string =>
+  p.command !== null ? `\`${p.command}\` — ${p.error}` : p.error;
+
+export const contradictionOf = (p: OpenProblem): string => `${problemText(p)} (still failing)`;
 
 interface ProblemGroup {
   failures: WorkEvent[]; // unresolved failures of one command, oldest first
@@ -120,6 +134,8 @@ export function findOpenProblems(events: WorkEvent[]): OpenProblem[] {
         latest: newest.ts,
         problem: {
           error: errorOf(group.failures),
+          command: commandOf(newest),
+          isTest: group.failures.some((f) => f.kind === 'test_failed'),
           source: newest.source,
           firstSeen: (group.failures[0] as WorkEvent).ts,
           attempts,
@@ -148,16 +164,16 @@ export function detectClaimedDone(
   const claim = events[claimIndex] as WorkEvent;
 
   const contradictions: string[] = [];
-  const open = new Set(openProblems.map((p) => `${p.firstSeen}\0${p.error}`));
+  const open = new Map(openProblems.map((p) => [`${p.firstSeen}\0${p.error}`, p]));
   const groups = [...problemGroups(events).values()].sort((a, b) => b.firstIndex - a.firstIndex);
   for (const group of groups) {
-    const error = errorOf(group.failures);
-    if (!open.has(`${(group.failures[0] as WorkEvent).ts}\0${error}`)) continue;
+    const problem = open.get(`${(group.failures[0] as WorkEvent).ts}\0${errorOf(group.failures)}`);
+    if (problem === undefined) continue;
     // From the same agent session, or appeared after the claim.
     const sameSession =
       claim.sessionRef !== null && group.failures.some((f) => f.sessionRef === claim.sessionRef);
     const later = group.failures.some((f) => events.indexOf(f) > claimIndex);
-    if (sameSession || later) contradictions.push(`${error} (still failing)`);
+    if (sameSession || later) contradictions.push(contradictionOf(problem));
   }
   const committedSince = events.slice(claimIndex + 1).some((e) => e.kind === 'commit');
   if (COMMIT_CLAIM.test(claim.summary) && uncommittedCount > 0 && !committedSince) {
@@ -167,19 +183,29 @@ export function detectClaimedDone(
   return { source: claim.source, message: claim.summary, at: claim.ts, contradictions };
 }
 
-function editedFilesLine(window: WorkEvent[], root: string): string | null {
+// Edited files in first-edit order, relative to the project root.
+export function editedPaths(events: WorkEvent[], root: string): string[] {
   const paths: string[] = [];
-  for (const e of window) {
+  for (const e of events) {
     if (e.kind !== 'file_edit') continue;
     const raw = typeof e.data.path === 'string' ? e.data.path : e.summary.replace(/^\w+ /, '');
     const path = isAbsolute(raw) && raw.startsWith(root + '/') ? relative(root, raw) : raw;
     if (!paths.includes(path)) paths.push(path);
   }
+  return paths;
+}
+
+// "a, b, c and 2 more"
+export function shortList(items: string[]): string {
+  const shown = items.slice(0, SHOWN_EDITED_FILES).join(', ');
+  const rest = items.length - SHOWN_EDITED_FILES;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
+}
+
+function editedFilesLine(window: WorkEvent[], root: string): string | null {
+  const paths = editedPaths(window, root);
   if (paths.length === 0) return null;
-  const shown = paths.slice(0, SHOWN_EDITED_FILES).join(', ');
-  const more =
-    paths.length > SHOWN_EDITED_FILES ? ` and ${paths.length - SHOWN_EDITED_FILES} more` : '';
-  return `Edited ${paths.length} file${paths.length === 1 ? '' : 's'}: ${shown}${more}`;
+  return `Edited ${paths.length} file${paths.length === 1 ? '' : 's'}: ${shortList(paths)}`;
 }
 
 function storedReport(repo: Repo): IngestReport | null {

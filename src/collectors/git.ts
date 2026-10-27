@@ -304,6 +304,7 @@ export interface WorkingState {
   branch: string | null;
   files: { path: string; status: string }[];
   diffStat: string | null;
+  unavailable?: true; // git itself failed or timed out (not "not a repo", not "no git")
 }
 
 function fileStatus(type: string, xy: string): string {
@@ -345,7 +346,8 @@ export function readWorkingState(root: string): WorkingState {
     return { branch, files, diffStat };
   } catch (err) {
     const e = err instanceof GitError ? err : toGitError(err);
-    if (e.kind === 'failed') logError('git', `reading working state of ${root}: ${e.message}`);
-    return empty;
+    if (e.kind !== 'failed') return empty;
+    logError('git', `reading working state of ${root}: ${e.message}`);
+    return { ...empty, unavailable: true };
   }
 }

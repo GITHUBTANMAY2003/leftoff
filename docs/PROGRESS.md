@@ -17,8 +17,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 | 7 | Codex CLI collector ([report](reports/task-07.md)) | done | `195d6cb` | Events only from `item_completed` (response_items repeat them); `parseCodexRecord(rec, state)`; dedupe key `(thread_id, ordinal)` so .jsonl→.zst adds no rows; JSON cursors; `engines >=22.15` (zstd exists). Fold-in: shared test-failure patterns |
 | 8 | Ingest orchestrator ([report](reports/task-08.md)) | done | `020e67b` | `Repo.transaction(fn)` added (needed for the one-transaction commit); `opts.collectors` test seam; `perSource` keyed by the four collectors. Soft deadline approved and added in Task 9 |
 | 9 | Work sessions and brief facts ([report](reports/task-09.md)) | done | `e21e97d` | `committed/pushed/merged` added to the claim regex (R-D1); failures grouped per normalized command; shell events carry `data.command`; attempts = first 5. Also: soft deadline + rotation (owner decision); redaction NAME=value rule was quadratic (16 s per 100 KB) — fixed |
-| 10 | Renderers, `resume` and `note` commands ([report](reports/task-10.md)) | done | (filled in by Task 11) | Renderers take optional `opts.now`; `--polish` flag deferred to Task 12; golden compared with `toBe` (no auto-created snapshot). Fold-in: probe classification (`data.probe`, owner decision) |
-| 11 | Standup and loose-ends commands | not started | | |
+| 10 | Renderers, `resume` and `note` commands ([report](reports/task-10.md)) | done | `7c3d7a1` | Renderers take optional `opts.now`; `--polish` flag deferred to Task 12; golden compared with `toBe` (no auto-created snapshot). Fold-in: probe classification (`data.probe`, owner decision) |
+| 11 | Standup and loose-ends commands ([report](reports/task-11.md)) | done | (filled in by Task 12) | `buildStandup(input, { prefix })`; `buildLooseEnds` optional `deadline`; `WorkingState.unavailable` / `LooseEnds.gitUnavailable` for `? git status unavailable`; standup ingests first. Owner decisions folded in: Task 10 §9.1/§9.2 (dedupe with `tried:`, command first, 100-char terminal cap, single status; §1.1/§1.12/golden updated), `!` line counts tests vs other problems (`OpenProblem.isTest`), every problem listed, `Worked on: <last request>` |
 | 12 | AI polish providers and background summarize | not started | | |
 | 13 | Claude Code plugin and hook commands | not started | | |
 | 14 | Auto brief on terminal open | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 11: Standup and loose-ends commands.** Waiting for the owner's `continue` (open: Task 10 report §9.1, contradictions repeated under Open problems).
+**Task 12: AI polish providers and background summarize.** Waiting for the owner's `continue` (open: Task 11 report §9.1 cap hides "(still failing)", §9.2 `2>&1` in normalized commands). Task 12 needs real AI calls: it will stop and ask before any.

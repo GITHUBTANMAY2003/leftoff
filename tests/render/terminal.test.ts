@@ -27,25 +27,85 @@ test('empty sections are omitted', () => {
   expect(out).toMatch(/^Next step$/m);
 });
 
+const SMTP = '`python scripts/send_test_email.py` — SMTP connection refused';
+const claimed = (contradictions: string[]): BriefFacts => ({
+  ...rahulFacts(),
+  claimedDone: {
+    source: 'claude',
+    message: 'All tests pass, done.',
+    at: '2026-10-20T18:25:00.000Z',
+    contradictions,
+  },
+});
+
 test('"Agent said done, but" section renders first with each contradiction', () => {
-  const f: BriefFacts = {
-    ...rahulFacts(),
-    claimedDone: {
-      source: 'claude',
-      message: 'All tests pass, done.',
-      at: '2026-10-20T18:25:00.000Z',
-      contradictions: ['SMTP connection refused (still failing)', '1 uncommitted file'],
-    },
-  };
+  const f = claimed([`${SMTP} (still failing)`, '1 uncommitted file']);
   const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');
   const first = lines.findIndex((l) => /^[A-Z]/.test(l) && !l.startsWith('Where'));
-  expect(lines.slice(first, first + 4)).toEqual([
+  expect(lines.slice(first, first + 5)).toEqual([
     'Agent said done, but',
     '  claude said: "All tests pass, done." (14h ago)',
-    '  ✗ SMTP connection refused (still failing)',
+    `  ✗ ${SMTP} (still failing)`,
+    '    tried: changed port to 587 · disabled TLS',
     '  ✗ 1 uncommitted file',
   ]);
   expect(lines.indexOf('Agent said done, but')).toBeLessThan(lines.indexOf('Done'));
+});
+
+test('a problem shown under "Agent said done, but" is left out of Open problems', () => {
+  const out = renderTerminal(claimed([`${SMTP} (still failing)`]), null, {
+    color: false,
+    now: RAHUL_NOW,
+  });
+  expect(out).not.toMatch(/^Open problems$/m);
+  expect(out.split(SMTP)).toHaveLength(3); // the contradiction and the next step, nothing else
+});
+
+test('other open problems stay under Open problems', () => {
+  const f = claimed([`${SMTP} (still failing)`]);
+  f.openProblems = [
+    ...f.openProblems,
+    {
+      error: 'disk full',
+      command: null,
+      isTest: false,
+      source: 'shell',
+      firstSeen: f.window.from,
+      attempts: [],
+    },
+  ];
+  const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  const at = lines.indexOf('Open problems');
+  expect(lines.slice(at, at + 3)).toEqual(['Open problems', '  ✗ disk full', '']);
+});
+
+test('lines longer than 100 characters are cut with "…" in the terminal', () => {
+  const long = `npm error ${'x'.repeat(200)}`;
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [
+      {
+        error: long,
+        command: 'npm run lint',
+        isTest: false,
+        source: 'claude',
+        firstSeen: '',
+        attempts: [long],
+      },
+    ],
+    notes: ['🙂'.repeat(150)],
+  };
+  const plain = renderTerminal(f, null, { color: false, now: RAHUL_NOW });
+  const lines = plain.split('\n');
+  for (const l of lines) expect([...l].length).toBeLessThanOrEqual(100);
+  const problem = lines.find((l) => l.startsWith('  ✗ `npm run lint` — npm error x'));
+  expect([...(problem as string)]).toHaveLength(100);
+  expect(problem?.endsWith('x…')).toBe(true);
+  expect(lines.find((l) => l.startsWith('    tried: '))?.endsWith('…')).toBe(true);
+  expect(lines.find((l) => l.startsWith('  • 🙂'))).toBe(`  • ${'🙂'.repeat(95)}…`);
+  const colored = renderTerminal(f, null, { color: true, now: RAHUL_NOW });
+  // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
+  expect(colored.replace(/\x1b\[[0-9;]*m/g, '')).toBe(plain);
 });
 
 test('Notes render after Open problems and before Next step', () => {
@@ -82,7 +142,9 @@ test('a polished paragraph is shown above the facts, which are still all shown',
   );
   const lines = out.split('\n');
   expect(lines[2]).toBe('Rahul was wiring up password resets; SMTP still refuses.');
-  expect(out).toContain('  → Resolve: SMTP connection refused');
+  expect(out).toContain(
+    '  → Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+  );
   expect(out).toContain('Done');
 });
 

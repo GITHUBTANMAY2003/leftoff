@@ -1,10 +1,26 @@
 import { Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { logError } from '../core/logger.ts';
+import { runLoops } from './commands/loops.ts';
 import { runNote } from './commands/note.ts';
 import { runResume } from './commands/resume.ts';
+import { runStandup } from './commands/standup.ts';
 
 const program = new Command().name('leftoff').description(pkg.description).version(pkg.version);
+
+const print = (r: { output: string; exitCode: number }) => {
+  process.stdout.write(r.output + '\n');
+  process.exitCode = r.exitCode;
+};
+
+// Bare `leftoff` is the headline command: loose ends across all projects.
+program.action(async () => print(await runLoops({ json: false })));
+
+program
+  .command('loops')
+  .description('loose ends across all your projects')
+  .option('--json', 'print the loose ends as JSON')
+  .action(async (o: { json?: boolean }) => print(await runLoops({ json: Boolean(o.json) })));
 
 program
   .command('resume')
@@ -14,10 +30,25 @@ program
   .addOption(new Option('--md', 'print Markdown').conflicts('json'))
   .action(async (o: { project?: string; json?: boolean; md?: boolean }) => {
     const format = o.json ? 'json' : o.md ? 'md' : 'terminal';
-    const r = await runResume({ cwd: process.cwd(), project: o.project, format, polish: false });
-    process.stdout.write(r.output + '\n');
-    process.exitCode = r.exitCode;
+    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish: false }));
   });
+
+program
+  .command('standup')
+  .description('your standup: yesterday, today, blockers')
+  .option('--since <when>', 'yesterday, today, Nh or YYYY-MM-DD (default: previous working day)')
+  .option('--all', 'cover every project, not just this one')
+  .option('--copy', 'also copy it to the clipboard')
+  .action(async (o: { since?: string; all?: boolean; copy?: boolean }) =>
+    print(
+      await runStandup({
+        cwd: process.cwd(),
+        since: o.since,
+        all: Boolean(o.all),
+        copy: Boolean(o.copy),
+      }),
+    ),
+  );
 
 program
   .command('note')

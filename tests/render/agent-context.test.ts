@@ -28,7 +28,9 @@ test('agent context starts and ends with exact lines and is ≤ 4000 chars even 
   expect(out).toContain('Polished summary that must survive truncation.'); // prose kept, lists cut
   expect(out).toMatch(/and \d+ more/);
   expect(out).toContain('src/module-0/file-0.ts'); // shortened, not dropped
-  expect(out).toContain('Suggested next step: Resolve: SMTP connection refused');
+  expect(out).toContain(
+    'Suggested next step: Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+  );
 });
 
 test('the agent is told what was already tried, so it does not retry it (§1.1)', () => {
@@ -37,7 +39,9 @@ test('the agent is told what was already tried, so it does not retry it (§1.1)'
   expect(out).toContain('Already tried (did not fix it): changed port to 587; disabled TLS');
   expect(out).toContain('feature/forgot-password');
   expect(out).toContain('email_service.py');
-  expect(out).toContain('Suggested next step: Resolve: SMTP connection refused');
+  expect(out).toContain(
+    'Suggested next step: Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+  );
 });
 
 test('a huge single text field is still cut to fit, keeping the first and last lines', () => {

@@ -1,0 +1,11 @@
+Loose ends across 2 projects
+
+myapp (feature/forgot-password) · 14h ago
+  ! Agent said "All tests pass" — 1 test still failing
+  ✗ `pytest tests/test_reset.py` — 1 failed, 4 passed (1 attempt)
+  ✗ SMTP connection refused (2 attempts)
+  • 1 uncommitted file
+api-server (main) · 4d ago · stale
+  • 3 uncommitted files
+
+Run `leftoff resume` inside a project for details

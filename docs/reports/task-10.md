@@ -361,4 +361,4 @@ cli tests                 → Error: Cannot find module '../../src/cli/commands/
 
 ## 10. Commit
 
-To be filled in by Task 11's commit (B11). The commit message is `feat(cli): renderers, resume and note commands`.
+`7c3d7a1` — `feat(cli): renderers, resume and note commands` (backfilled by Task 11's commit, B11). §9.1 and §9.2 were answered after this commit and are applied in Task 11 (Part A of its report).

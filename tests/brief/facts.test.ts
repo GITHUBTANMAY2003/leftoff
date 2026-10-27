@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, expect, test } from 'vitest';
-import { buildFacts, detectClaimedDone, findOpenProblems } from '../../src/brief/facts.ts';
+import {
+  buildFacts,
+  detectClaimedDone,
+  findOpenProblems,
+  problemText,
+  type OpenProblem,
+} from '../../src/brief/facts.ts';
 import { factsHash } from '../../src/brief/hash.ts';
 import { DEFAULT_CONFIG, type Config } from '../../src/core/config.ts';
 import { makeEvent, type EventKind, type WorkEvent } from '../../src/model/event.ts';
@@ -137,7 +143,7 @@ test('claimed done: "All tests pass" then a test failure → flagged with "(stil
   expect(cd).toMatchObject({
     source: 'claude',
     message: 'All tests pass.',
-    contradictions: ['1 failed (still failing)'],
+    contradictions: ['`npm test` — 1 failed (still failing)'],
   });
 });
 
@@ -147,7 +153,7 @@ test('claimed done: an open problem from the same agent session before the claim
     'Done!',
   ]);
   expect(detectClaimedDone(events, findOpenProblems(events), 0)?.contradictions).toEqual([
-    'Missing script: "lint" (still failing)',
+    '`npm run lint` — Missing script: "lint" (still failing)',
   ]);
 });
 
@@ -234,7 +240,7 @@ test('buildFacts for rahul scenario', () => {
   expect(f.project).toEqual({ root: RAHUL_ROOT, name: 'myapp' });
   expect(f.branch).toBe('feature/forgot-password');
   expect(f.unfinished.files[0]?.path).toBe('email_service.py');
-  expect(f.nextStep).toBe('Resolve: SMTP connection refused');
+  expect(f.nextStep).toBe('Resolve: `python scripts/send_test_email.py` — SMTP connection refused');
   expect(f.done).toEqual([
     'Built POST /auth/forgot-password endpoint',
     'Added reset-token migration',
@@ -413,4 +419,50 @@ test('probe failures are not open problems and do not contradict a claim, but st
   );
   expect(findOpenProblems(events)).toEqual([]);
   expect(detectClaimedDone(events, findOpenProblems(events), 0)).toBeNull();
+});
+
+test('an open problem carries its normalized command, shown before the error', () => {
+  const [p] = findOpenProblems(timeline(fail('CI=1   npm run lint', 'Missing script: "lint"')));
+  expect(p?.command).toBe('npm run lint');
+  expect(problemText(p as OpenProblem)).toBe('`npm run lint` — Missing script: "lint"');
+});
+
+test('a failure with no error text shows its exit code after the command', () => {
+  const [p] = findOpenProblems(
+    timeline([
+      'command_failed',
+      '`npx --no-install eslint .` failed: exit code 130',
+      { command: 'npx --no-install eslint .', exitCode: 130, error: '' },
+    ]),
+  );
+  expect(problemText(p as OpenProblem)).toBe('`npx --no-install eslint .` — exit code 130');
+});
+
+test('a tool error without a command is shown by its error text alone', () => {
+  const [p] = findOpenProblems(
+    timeline(['tool_error', 'Edit failed', { tool: 'Edit', error: 'old_string not found' }]),
+  );
+  expect(p?.command).toBeNull();
+  expect(problemText(p as OpenProblem)).toBe('old_string not found');
+});
+
+test('an open problem whose failures include a failed test run is marked as a test', () => {
+  const problems = findOpenProblems(
+    timeline(
+      fail('npm test', '1 failed'),
+      [
+        'test_failed',
+        'Tests failed: `npm test`',
+        {
+          command: 'npm test',
+          output: '1 failed',
+        },
+      ],
+      fail('npm run lint', 'Missing script'),
+    ),
+  );
+  expect(problems.map((p) => [p.command, p.isTest])).toEqual([
+    ['npm run lint', false],
+    ['npm test', true],
+  ]);
 });

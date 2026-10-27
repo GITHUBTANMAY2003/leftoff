@@ -19,8 +19,10 @@ function facts(partial: Partial<Omit<BriefFacts, 'nextStep'>>): Omit<BriefFacts,
     ...partial,
   };
 }
-const op = (error: string): OpenProblem => ({
+const op = (error: string, command: string | null = null): OpenProblem => ({
   error,
+  command,
+  isTest: false,
   source: 'claude',
   firstSeen: '2026-10-20T10:00:00.000Z',
   attempts: [],
@@ -89,4 +91,22 @@ test('the first open problem in the list (the newest) is the one to resolve', ()
   expect(chooseNextStep(facts({ openProblems: [op('newest'), op('older')] }))).toBe(
     'Resolve: newest',
   );
+});
+
+test('a contradiction from a failing command is verified by that command', () => {
+  const lint = op('Missing script: "lint"', 'npm run lint');
+  expect(
+    chooseNextStep(
+      facts({
+        openProblems: [lint],
+        claimedDone: cd(['`npm run lint` — Missing script: "lint" (still failing)']),
+      }),
+    ),
+  ).toBe('Verify: `npm run lint` still failing');
+});
+
+test('an open problem from a command is resolved with the command first', () => {
+  expect(
+    chooseNextStep(facts({ openProblems: [op('Missing script: "lint"', 'npm run lint')] })),
+  ).toBe('Resolve: `npm run lint` — Missing script: "lint"');
 });

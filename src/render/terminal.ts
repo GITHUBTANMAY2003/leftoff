@@ -1,13 +1,24 @@
-import type { BriefFacts } from '../brief/facts.ts';
+import { problemText, type BriefFacts } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
+import { splitProblems } from './problems.ts';
 
 // The terminal brief (spec §1.8; the §1.1 example is the exact reference).
 // Headings in this order; empty sections omitted; no footer after Sources.
 
+// Each fact line is cut to this many characters (code points) with "…"; only
+// the terminal does this (owner decision after Task 10).
+export const LINE_WIDTH = 100;
+
+export function fit(prefix: string, text: string, width = LINE_WIDTH): string {
+  const room = width - [...prefix].length;
+  const chars = [...text];
+  return chars.length <= room ? text : chars.slice(0, Math.max(0, room - 1)).join('') + '…';
+}
+
 const STATUS_MARK = { ok: '✓', not_found: '–', error: '!' } as const;
 
 type Paint = (text: string) => string;
-function painter(color: boolean) {
+export function painter(color: boolean) {
   const wrap =
     (code: string): Paint =>
     (t) =>
@@ -56,39 +67,36 @@ export function renderTerminal(
 ): string {
   const now = opts.now ?? new Date();
   const p = painter(opts.color);
-  const blocks: string[][] = [[p.bold(header(f, now))]];
-  if (polished) blocks.push([polished]);
+  const blocks: string[][] = [[p.bold(fit('', header(f, now)))]];
+  if (polished) blocks.push([polished]); // prose, not cut
   const section = (title: string, lines: string[]) => {
     if (lines.length > 0) blocks.push([p.bold(title), ...lines]);
   };
+  const bullet = (text: string) => `  • ${fit('  • ', text)}`;
+  const problem = (text: string, attempts: string[]) => [
+    `  ${p.red('✗')} ${fit('  ✗ ', text)}`,
+    ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
+  ];
+  const { claimed, open } = splitProblems(f);
 
   if (f.claimedDone) {
     const c = f.claimedDone;
     section('Agent said done, but', [
-      `  ${c.source} said: "${c.message}" (${relativeAgo(c.at, now)})`,
-      ...c.contradictions.map((x) => `  ${p.red('✗')} ${x}`),
+      fit('', `  ${c.source} said: "${c.message}" (${relativeAgo(c.at, now)})`),
+      ...claimed.flatMap((x) => problem(x.text, x.attempts)),
     ]);
   }
-  section(
-    'Done',
-    f.done.map((d) => `  • ${d}`),
-  );
+  section('Done', f.done.map(bullet));
   section(
     'Unfinished',
-    f.unfinished.files.map((file) => `  • ${file.path} (${file.status}, uncommitted)`),
+    f.unfinished.files.map((file) => bullet(`${file.path} (${file.status})`)),
   );
   section(
     'Open problems',
-    f.openProblems.flatMap((o) => [
-      `  ${p.red('✗')} ${o.error}`,
-      ...(o.attempts.length > 0 ? [p.dim(`    tried: ${o.attempts.join(' · ')}`)] : []),
-    ]),
+    open.flatMap((o) => problem(problemText(o), o.attempts)),
   );
-  section(
-    'Notes',
-    f.notes.map((n) => `  • ${n}`),
-  );
-  section('Next step', f.nextStep ? [`  ${p.cyan('→')} ${f.nextStep}`] : []);
+  section('Notes', f.notes.map(bullet));
+  section('Next step', f.nextStep ? [`  ${p.cyan('→')} ${fit('  → ', f.nextStep)}`] : []);
   blocks.push([sourcesLine(f, '  ', opts.color ? p : undefined)]);
   return blocks.map((b) => b.join('\n')).join('\n\n');
 }

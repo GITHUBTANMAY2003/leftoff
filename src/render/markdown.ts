@@ -1,5 +1,6 @@
-import type { BriefFacts } from '../brief/facts.ts';
+import { problemText, type BriefFacts } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
+import { splitProblems } from './problems.ts';
 import { sourcesLine } from './terminal.ts';
 
 // `leftoff resume --md`, and the context handed to new Claude Code sessions.
@@ -21,12 +22,15 @@ export function renderMarkdown(
   const section = (title: string, body: string[]) => {
     if (body.length > 0) blocks.push(`### ${title}\n\n${body.join('\n')}`);
   };
+  const tried = (attempts: string[]) =>
+    attempts.length > 0 ? ` — tried: ${attempts.join(' · ')}` : '';
+  const { claimed, open } = splitProblems(f);
   if (f.claimedDone) {
     const c = f.claimedDone;
     section('Agent said done, but', [
       `${c.source} said: "${c.message}" (${relativeAgo(c.at, now)})`,
       '',
-      ...c.contradictions.map((x) => `- ✗ ${x}`),
+      ...claimed.map((x) => `- ✗ ${x.text}${tried(x.attempts)}`),
     ]);
   }
   section(
@@ -34,17 +38,14 @@ export function renderMarkdown(
     f.done.map((d) => `- ${d}`),
   );
   section('Unfinished', [
-    ...f.unfinished.files.map((file) => `- \`${file.path}\` (${file.status}, uncommitted)`),
+    ...f.unfinished.files.map((file) => `- \`${file.path}\` (${file.status})`),
     ...(f.unfinished.diffStat && f.unfinished.files.length > 0
       ? [`- ${f.unfinished.diffStat}`]
       : []),
   ]);
   section(
     'Open problems',
-    f.openProblems.map(
-      (o) =>
-        `- **${o.error}**${o.attempts.length > 0 ? ` — tried: ${o.attempts.join(' · ')}` : ''}`,
-    ),
+    open.map((o) => `- **${problemText(o)}**${tried(o.attempts)}`),
   );
   section(
     'Notes',
@@ -98,7 +99,7 @@ function contextBody(f: BriefFacts, polished: string | null, now: Date, limit: n
     'Open problems (unresolved):',
     f.openProblems.map(
       (o) =>
-        `- ${o.error}${o.attempts.length > 0 ? `\n  Already tried (did not fix it): ${o.attempts.join('; ')}` : ''}`,
+        `- ${problemText(o)}${o.attempts.length > 0 ? `\n  Already tried (did not fix it): ${o.attempts.join('; ')}` : ''}`,
     ),
   );
   list(

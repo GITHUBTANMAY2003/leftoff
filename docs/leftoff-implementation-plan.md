@@ -36,19 +36,19 @@ Done
   • Added reset-token migration
 
 Unfinished
-  • email_service.py (modified, uncommitted)
+  • email_service.py (modified)
 
 Open problems
-  ✗ SMTP connection refused
+  ✗ `python scripts/send_test_email.py` — SMTP connection refused
     tried: changed port to 587 · disabled TLS
 
 Next step
-  → Resolve: SMTP connection refused
+  → Resolve: `python scripts/send_test_email.py` — SMTP connection refused
 
 Sources: claude ✓  git ✓  shell ✓  codex –
 ```
 
-(This is exactly the Task 10 golden file `tests/render/golden/rahul.txt`. Both `Done` lines are commit subjects. With real data, `tried:` items are mechanical event summaries such as `Edited email_service.py`; the wording here comes from the test helper — R-D2.)
+(This is exactly the Task 10 golden file `tests/render/golden/rahul.txt`. Both `Done` lines are commit subjects. Problems show the failing command first, and files show a single git status (owner decisions after Task 10). With real data, `tried:` items are mechanical event summaries such as `Edited email_service.py`; the wording here comes from the test helper — R-D2.)
 
 And when he starts a new Claude Code session, the agent receives the same brief and does not retry the two failed fixes.
 
@@ -178,7 +178,12 @@ interface BriefFacts {
   nextStep: string | null;
   sources: { name: Source; status: 'ok' | 'not_found' | 'error'; detail?: string }[];
 }
-interface OpenProblem { error: string; source: Source; firstSeen: string; attempts: string[] }
+interface OpenProblem {
+  error: string;               // first line of the newest error; `exit code N` when a command failed with no output
+  command: string | null;      // normalized failing command, shown first: `npm run lint` — Missing script: "lint"
+  isTest: boolean;             // one of its failures is a failed test run (loose ends count tests)
+  source: Source; firstSeen: string; attempts: string[];
+}
 interface ClaimedDone { source: Source; message: string; at: string; contradictions: string[] }
 interface LooseEnds {          // one project's entry in the cross-project view
   project: { root: string; name: string };
@@ -188,6 +193,7 @@ interface LooseEnds {          // one project's entry in the cross-project view
   claimedDone: ClaimedDone | null;
   openProblems: OpenProblem[];
   uncommittedCount: number;
+  gitUnavailable: boolean;     // git status failed or timed out → "? git status unavailable"
 }
 ```
 
@@ -195,27 +201,29 @@ Rules:
 - **Window:** the most recent work session for the project; if it has fewer than 3 events, include the previous session too.
 - **Probes (owner decision after Task 9):** failures of look-around commands — `ls`, `cat`, `head`, `tail`, `stat`, `test`/`[`, `which`/`command -v`/`type`, `grep`/`rg`/`ag`/`find`/`fd`, `git show`/`rev-parse`/`ls-files`/`cat-file`, `diff`/`cmp` (every part of a `&&`/`|`/`;` line must be one; `cd` steps allowed) — with exit code 1 or 2, and errors of read-only agent tools (Read, Glob, Grep, LS; Codex reads through shell commands), are stored with `data.probe = true`: kept in the database, never open problems or claimed-done contradictions. Not a probe when the output looks like a failed test run, or with any other exit code (126, 127, 128, 130, …). The list lives in `src/collectors/probes.ts`.
 - **Open problem:** a `command_failed` / `tool_error` / `test_failed` event (not a probe) whose normalized command (whitespace collapsed, leading env assignments removed) is **not** followed later in the window by a successful `command` with the same normalized command. Failures are grouped per normalized command: one open problem per unresolved command (`firstSeen` = first unresolved failure, `error` = first line of the newest error), newest first (owner-confirmed after Task 9). A successful command from any source resolves it (e.g. your shell after an agent failure). `attempts` = summaries of `file_edit` and `command` events after the first failure, the first 5 in time order, deduplicated.
-- **Next step (first match wins):** newest note starting with `next:` → `Verify: <first claimedDone contradiction>` → `Resolve: <newest open problem error>` → `Finish and commit changes in <first unfinished file>` (+ ` and N more`) → `Continue: <lastIntent>` → `null`.
-- **Claimed done:** take the newest `agent_message` in the window whose text matches `/\b(done|completed?|finished|fixed|implemented|committed|pushed|merged|all (tests )?pass(ing|ed)?|ready (for review|to merge))\b/i` (`committed|pushed|merged` added after Task 9, owner-confirmed, so the R-D1 commit claims are claims) and does not match `/\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i`. Contradictions (each a short string): every open problem from the same agent session or later (`"<error> (still failing)"`); `"<N> uncommitted files"` **only if the claim itself says the work was committed** — the message matches `/\b(committed|pushed|merged|ready to merge)\b/i` — and there are uncommitted files and no `commit` event after the message. Uncommitted files alone are never a contradiction, because many developers review before committing (R-D1); they still appear under `Unfinished`. `claimedDone` is `null` when there is no matching message or no contradiction.
-- **Loose ends (cross-project):** for each project with events in the last `retentionDays`, build facts with stored events plus live git state, and include it if it has a claimedDone, an open problem, or uncommitted files. Order: claimedDone first, then by number of open problems (desc), then stale, then oldest `lastActiveAt`. At most `looseEnds.maxProjects` (default **20**) projects are checked, most recently active first.
+- **Problem text (owner decision after Task 10):** an open problem reads `` `<command>` — <error> `` (just `<error>` when it has no command); this is the text used in contradictions, renderers, the standup and loose ends.
+- **Next step (first match wins):** newest note starting with `next:` → `Verify: <first claimedDone contradiction>` (`` Verify: `<command>` still failing `` when that contradiction is a failing command) → `Resolve: <newest open problem text>` → `Finish and commit changes in <first unfinished file>` (+ ` and N more`) → `Continue: <lastIntent>` → `null`.
+- **Claimed done:** take the newest `agent_message` in the window whose text matches `/\b(done|completed?|finished|fixed|implemented|committed|pushed|merged|all (tests )?pass(ing|ed)?|ready (for review|to merge))\b/i` (`committed|pushed|merged` added after Task 9, owner-confirmed, so the R-D1 commit claims are claims) and does not match `/\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i`. Contradictions (each a short string): every open problem from the same agent session or later (`"<problem text> (still failing)"`); `"<N> uncommitted files"` **only if the claim itself says the work was committed** — the message matches `/\b(committed|pushed|merged|ready to merge)\b/i` — and there are uncommitted files and no `commit` event after the message. Uncommitted files alone are never a contradiction, because many developers review before committing (R-D1); they still appear under `Unfinished`. `claimedDone` is `null` when there is no matching message or no contradiction.
+- **Loose ends (cross-project):** for each project with events in the last `retentionDays`, build facts with stored events plus live git state, and include it if it has a claimedDone, an open problem, uncommitted files, or a git status that could not be read (Task 11). Order: claimedDone first, then by number of open problems (desc), then stale, then oldest `lastActiveAt`. At most `looseEnds.maxProjects` (default **20**) projects are checked, most recently active first.
 - **Polish never replaces facts.** A polished paragraph is shown above the facts; facts are always shown.
 
 ## 1.8 Output formats (exact copy)
 
-- Terminal brief: headings exactly `Where you left off`, `Agent said done, but`, `Done`, `Unfinished`, `Open problems`, `Notes`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error) in the fixed order `claude`, `git`, `shell`, `codex`. Empty sections are omitted. No footer line after `Sources:`. `Done` items are commit subjects without hashes, then `Edited N files: a, b, c` when present. Respect `NO_COLOR`. The §1.1 example is the exact reference.
+- Terminal brief: headings exactly `Where you left off`, `Agent said done, but`, `Done`, `Unfinished`, `Open problems`, `Notes`, `Next step`, then the `Sources:` line (`✓` ok, `–` not_found, `!` error) in the fixed order `claude`, `git`, `shell`, `codex`. Empty sections are omitted. No footer line after `Sources:`. `Done` items are commit subjects without hashes, then `Edited N files: a, b, c` when present. `Unfinished` items are `<path> (<status>)` with one git status (modified, untracked, added, deleted, renamed, copied, conflicted). A problem shown under `Agent said done, but` is not repeated under `Open problems`; its `tried:` line moves with it (also in `--md`; the agent context and `--json` keep every open problem). Each line is cut to 100 characters with `…` (terminal only: not `--json`/`--md`/agent context; the polished paragraph is not cut). Respect `NO_COLOR`. The §1.1 example is the exact reference. (Owner decisions after Task 10.)
 - Auto brief (terminal open): first line `Where you left off — <name> (<branch>) · last active <gap>`, at most 6 more lines (unfinished count, top open problem, next step), last line `Run \`leftoff resume\` for details`.
 - Agent context (Claude Code `additionalContext`): Markdown starting with `## Previous session in this project (from leftoff)`, ending with the line `This is an automatic summary of earlier work. Verify against the code before relying on it.` Max **4000** characters.
-- Standup: three sections `Yesterday:`, `Today:`, `Blockers:` (`Blockers: none` if empty).
-- Loose ends (`leftoff` / `leftoff loops`): first line `Loose ends across <N> projects` (or `No loose ends. Everything is committed and passing.`), then per project:
+- Standup: three sections `Yesterday:`, `Today:`, `Blockers:` (`Blockers: none` if empty; `Today: none` likewise; no activity → `- No activity recorded in this period` under `Yesterday:`). Not cut to 100 characters: it is meant to be pasted.
+- Loose ends (`leftoff` / `leftoff loops`): first line `Loose ends across <N> projects` (`1 project`; or only `No loose ends. Everything is committed and passing.`), a blank line, then per project (exactly `tests/render/golden/loose-ends.txt`):
 ```
 myapp (feature/forgot-password) · 14h ago
   ! Agent said "All tests pass" — 1 test still failing
+  ✗ `pytest tests/test_reset.py` — 1 failed, 4 passed (1 attempt)
   ✗ SMTP connection refused (2 attempts)
   • 1 uncommitted file
 api-server (main) · 4d ago · stale
   • 3 uncommitted files
 ```
-  Last line: `Run \`leftoff resume\` inside a project for details`.
+  then a blank line and the last line `Run \`leftoff resume\` inside a project for details`. The `!` line counts the problem contradictions: a problem with a failed test run is a test, the rest are problems — `1 test still failing`, `2 problems still failing`, `1 test and 1 other problem still failing` — then ` · 3 uncommitted files` when that contradiction applies (alone: `— 3 uncommitted files`). Every open problem gets its `✗` line, also those counted on the `!` line. A project whose git status can't be read shows `  ? git status unavailable`. Lines are cut to 100 characters from the middle, keeping the quote's end and the counts. (Owner decisions, Task 11.)
 
 ## 1.9 AI polish
 
@@ -256,7 +264,7 @@ api-server (main) · 4d ago · stale
 - Shell hook adds < 5 ms per command.
 - Hooks never make Claude Code wait more than their budget and never surface an error to the agent.
 - `leftoff loops` < 1.5 s with 20 tracked projects.
-- The brief for the §1.1 scenario contains: the branch, the uncommitted file, the open problem with both attempts, and next step `Resolve: SMTP connection refused`.
+- The brief for the §1.1 scenario contains: the branch, the uncommitted file, the open problem with both attempts, and next step `Resolve: `python scripts/send_test_email.py` — SMTP connection refused`.
 
 ---
 
@@ -880,6 +888,8 @@ Golden file `tests/render/golden/rahul.txt` must equal the brief in spec §1.1 (
 
 Default `since` = start of previous local day when today is Mon–Fri and previous working day is Friday on Mondays. Yesterday = commit subjects per project; a project with **no** commits in the window gets `Worked on <files> with <agent>` instead (R-B4); Today = next steps; Blockers = open problems. Prefix items with project name when `--all`. `--copy` tries `pbcopy`, `wl-copy`, `xclip -selection clipboard` in order; prints `(copied)` or `(clipboard tool not found)`.
 
+Task 11 notes: a project with neither commits nor edits in the window gets `Worked on: <last request>` (its newest agent prompt), else `Worked in <project> with <tools>` (owner decision). Blockers use the problem text (§1.7). `buildStandup` takes a second argument `{ prefix }` for `--all`. `runStandup` ingests first (budget 1200 ms, as `resume`); `--all` covers projects with events since `since`, most recently active first. Weekends use the previous day (only Mondays are special). `WorkingState` gains `unavailable?: true` when git itself fails or times out (not for "not a repo"); `buildLooseEnds` takes an optional `deadline` after which git is not read (those projects show `? git status unavailable`); `LooseEnds` gains `gitUnavailable`.
+
 - [ ] **Step 1: Write failing tests**
 
 ```ts
@@ -889,9 +899,9 @@ test('rahul standup', () => {
 - Built POST /auth/forgot-password endpoint
 - Added reset-token migration
 Today:
-- Resolve: SMTP connection refused
+- Resolve: `python scripts/send_test_email.py` — SMTP connection refused
 Blockers:
-- SMTP connection refused`);
+- `python scripts/send_test_email.py` — SMTP connection refused`);
 });
 test('project without commits gets "Worked on <files> with <agent>"', ...); // R-B4
 test('Monday since covers Friday', ...);

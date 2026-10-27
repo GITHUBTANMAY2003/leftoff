@@ -274,6 +274,20 @@ describe('readWorkingState', () => {
     expect(s.diffStat).toBe('1 file changed, 2 insertions(+)');
   });
 
+  test('a git failure (corrupt index) reads as unavailable; a non-repo folder does not', () => {
+    const root = initRepo(tmp, 'app');
+    writeFileSync(join(root, '.git', 'index'), 'garbage\n');
+    expect(readWorkingState(root)).toEqual({
+      branch: null,
+      files: [],
+      diffStat: null,
+      unavailable: true,
+    });
+    const plain = join(tmp, 'plain');
+    mkdirSync(plain);
+    expect(readWorkingState(plain)).toEqual({ branch: null, files: [], diffStat: null });
+  });
+
   test('a clean repo has no files and diffStat null', () => {
     const root = initRepo(tmp, 'app');
     commit(root, 'a');

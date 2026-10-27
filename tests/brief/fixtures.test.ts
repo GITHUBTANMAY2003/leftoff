@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, expect, test } from 'vitest';
-import { buildFacts } from '../../src/brief/facts.ts';
+import { buildFacts, problemText } from '../../src/brief/facts.ts';
 import { DEFAULT_CONFIG, type Config } from '../../src/core/config.ts';
 import { ingest, type IngestReport } from '../../src/ingest/ingest.ts';
 import { openDb } from '../../src/store/db.ts';
@@ -67,9 +67,9 @@ const facts = (root: string) =>
 
 test('Claude session: only lint is open; ls /nope and the missing Read are probes', () => {
   const f = facts(CLAUDE_ROOT);
-  expect(f.openProblems.map((p) => p.error)).toEqual([
-    'npm error npx canceled due to missing packages and no YES option: ["eslint@10.13.0"]',
-    'npm error Missing script: "lint"',
+  expect(f.openProblems.map(problemText)).toEqual([
+    '`npx --no-install eslint . 2>&1` — npm error npx canceled due to missing packages and no YES option: ["eslint@10.13.0"]',
+    '`npm run lint 2>&1` — npm error Missing script: "lint"',
   ]);
   // The failing test run was genuine, and resolved by the passing re-run.
   expect(f.claimedDone?.contradictions).toHaveLength(2);
@@ -81,9 +81,9 @@ test('Claude session: only lint is open; ls /nope and the missing Read are probe
 
 test('Codex session: lint and the interrupted npx are open; ls /nope and the empty rg are probes', () => {
   const f = facts(CODEX_ROOT);
-  expect(f.openProblems.map((p) => p.error)).toEqual([
-    '`npx --no-install eslint .` failed: exit code 130',
-    'npm error Missing script: "lint"',
+  expect(f.openProblems.map(problemText)).toEqual([
+    '`npx --no-install eslint .` — exit code 130',
+    '`npm run lint` — npm error Missing script: "lint"',
   ]);
   const probes = repo
     .eventsSince('2000-01-01T00:00:00.000Z')

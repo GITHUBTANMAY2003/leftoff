@@ -71,9 +71,11 @@ test('resume prints the brief for the project of cwd', async () => {
   expect(r.exitCode).toBe(0);
   expect(r.output).toMatch(/^Where you left off — myapp · last active /);
   expect(r.output).toContain(
-    '  ✗ SMTP connection refused\n    tried: changed port to 587 · disabled TLS',
+    '  ✗ `python scripts/send_test_email.py` — SMTP connection refused\n    tried: changed port to 587 · disabled TLS',
   );
-  expect(r.output).toContain('  → Resolve: SMTP connection refused');
+  expect(r.output).toContain(
+    '  → Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+  );
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
 });
@@ -84,7 +86,9 @@ test('--project picks another project; --json and --md formats', async () => {
   mkdirSync(elsewhere);
   const json = await runResume({ cwd: elsewhere, project, format: 'json', polish: false });
   const parsed = JSON.parse(json.output);
-  expect(parsed.facts.nextStep).toBe('Resolve: SMTP connection refused');
+  expect(parsed.facts.nextStep).toBe(
+    'Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+  );
   expect(parsed.polished).toBeNull();
   const md = await runResume({ cwd: elsewhere, project, format: 'md', polish: false });
   expect(md.output).toMatch(/^## Where you left off — myapp/);
@@ -96,7 +100,7 @@ test('resume ingests first: a failing command in the shell log shows up in the s
     [Date.now(), 2, 15, 42, project, 'make deploy'].join('\t') + '\n',
   );
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
-  expect(r.output).toContain('`make deploy` exited 2');
+  expect(r.output).toContain('  ✗ `make deploy` — exit code 2');
   // git ran fine (installed; this folder just isn't a repo); no agent logs exist here.
   expect(r.output).toContain('Sources: claude –  git ✓  shell ✓  codex –');
 });
