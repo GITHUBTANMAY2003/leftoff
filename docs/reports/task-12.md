@@ -416,4 +416,4 @@ The plan's ten named tests are all present:
 
 ## 10. Commit
 
-To be filled in by Task 13's commit (B11). The commit message is `feat(polish): optional llm polish with background summarize`.
+`0eb7093` — `feat(polish): optional llm polish with background summarize` (filled in by Task 13's commit, B11).

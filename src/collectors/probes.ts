@@ -28,6 +28,8 @@ export const PROBE_COMMANDS = [
   'git rev-parse',
   'git ls-files',
   'git cat-file',
+  // exit 1 means "differences found" (owner decision after Task 13)
+  'git diff',
   'diff',
   'cmp',
 ];

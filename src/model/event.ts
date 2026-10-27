@@ -158,7 +158,8 @@ export function normalizeCommand(cmd: string): string {
   for (let changed = true; changed;) {
     changed = false;
     const first = tokens[0];
-    if (tokens.length > 1 && first && !first.op && ASSIGNMENT.test(first.text)) {
+    // An env prefix (`FOO=1 npm test`), not a statement of its own (`R=/x; …`).
+    if (first && !first.op && ASSIGNMENT.test(first.text) && tokens[1] && !tokens[1].op) {
       tokens = tokens.slice(1);
       changed = true;
     } else if (first?.text === 'cd') {
@@ -182,4 +183,152 @@ export function normalizeCommand(cmd: string): string {
       return prev === undefined || prev.end === t.start ? t.text : ` ${t.text}`;
     })
     .join('');
+}
+
+// Leading steps that only prepare the shell, and prefixes that only run the
+// real program (found on the owner's real data after Task 13).
+const SETUP_STEPS = new Set(['cd', 'pushd', 'source', '.', 'export', 'set']);
+const RUNNERS = [
+  ['npx'],
+  ['bunx'],
+  ['uvx'],
+  ['uv', 'run'],
+  ['pnpm', 'exec'],
+  ['pnpm', 'dlx'],
+  ['yarn', 'dlx'],
+  ['poetry', 'run'],
+  ['pipx', 'run'],
+  ['bundle', 'exec'],
+];
+
+// The program and its subcommand, for resolving failures (owner decision after
+// Task 13). Leading setup steps (`cd`, `source`, `export`, `set`) and runner
+// prefixes (`npx`, `uv run`, `pnpm exec`, … with their flags) are skipped. Then
+// the first words up to a flag or `--`, at most three; after the second word a
+// path or file name ends it; a program followed by a flag keeps that flag
+// (`node --test`). `npx vitest run tests/a.test.ts` → `vitest run`. A command
+// that still has several steps is its own key: it only matches itself.
+export function commandKey(cmd: string): string {
+  const words = programWords(cmd);
+  if (words === null) return normalizeCommand(cmd);
+  const [program = '', ...rest] = words;
+  const key = [program];
+  for (const w of rest) {
+    if (key.length === 3 || w === '--') break;
+    if (w.startsWith('-')) {
+      if (key.length === 1) key.push(w);
+      break;
+    }
+    if (key.length >= 2 && isFileArgument(w)) break;
+    key.push(w);
+  }
+  return key.join(' ');
+}
+
+const isFileArgument = (w: string) => w.includes('/') || /\.\w+$/.test(w);
+
+// The words of the one real step of a command (setup steps and runner prefixes
+// skipped), or null when it has several steps or lines.
+function programWords(cmd: string): string[] | null {
+  // A single pipeline into a text filter is the command before the filter.
+  const base = endsWithFilter(cmd) ? withoutFilters(cmd) : cmd;
+  const steps: string[][] = [[]];
+  for (const t of tokenize(normalizeCommand(base))) {
+    if (t.op) steps.push([]);
+    else steps.at(-1)?.push(t.text);
+  }
+  while (steps.length > 1 && SETUP_STEPS.has(steps[0]?.[0] ?? '')) steps.shift();
+  // Lines of a multi-line command are steps too (normalizeCommand joins them).
+  if (steps.length !== 1 || base.trim().includes('\n')) return null;
+  let words = steps[0] as string[];
+  const runner = RUNNERS.find((r) => r.every((w, i) => words[i] === w));
+  if (runner) {
+    words = words.slice(runner.length);
+    while (words[0]?.startsWith('-')) words = words.slice(1);
+  }
+  return words;
+}
+
+// The file and path arguments of a command, sorted (owner decision after Task
+// 13): a success resolves a failure only with the same files, or with none (a
+// whole-project run).
+export function commandFiles(cmd: string): string[] {
+  const words = programWords(cmd) ?? [];
+  return [...new Set(words.slice(1).filter((w) => !w.startsWith('-') && isFileArgument(w)))].sort();
+}
+
+// Text filters whose exit code says nothing about the command piped into them
+// (`npx vitest run | grep FAIL` exits 1 when nothing matched). Owner decision
+// after Task 13.
+const FILTERS = new Set([
+  'grep',
+  'rg',
+  'head',
+  'tail',
+  'sed',
+  'awk',
+  'wc',
+  'jq',
+  'sort',
+  'uniq',
+  'cut',
+  'cat',
+  'less',
+]);
+
+// Index of the `|` before a trailing text filter, or -1.
+function filterPipeAt(tokens: Token[]): number {
+  let pipe = tokens.length - 1;
+  while (pipe >= 0 && !tokens[pipe]?.op) pipe--;
+  const program = tokens[pipe + 1]?.text ?? '';
+  return pipe > 0 && tokens[pipe]?.text === '|' && FILTERS.has(program) ? pipe : -1;
+}
+
+// True when the command is one pipeline (after leading setup steps such as
+// `cd x &&`) whose last program is a text filter. In a chain (`a && b | grep`)
+// the exit code may be an earlier step's, so it is not decided here.
+export function endsWithFilter(cmd: string): boolean {
+  let tokens = tokenize(cmd.replace(/\s+/g, ' ').trim());
+  for (let and = tokens.findIndex((t) => t.op); ; and = tokens.findIndex((t) => t.op)) {
+    if (!(and > 0 && tokens[and]?.text === '&&' && SETUP_STEPS.has(tokens[0]?.text ?? ''))) break;
+    tokens = tokens.slice(and + 1);
+  }
+  if (tokens.some((t) => t.op && t.text !== '|' && !REDIRECT.test(t.text))) return false;
+  return filterPipeAt(tokens) > 0;
+}
+
+// The command without its trailing text filters: `npx vitest run | grep FAIL`
+// → `npx vitest run`.
+export function withoutFilters(cmd: string): string {
+  const s = cmd.replace(/\s+/g, ' ').trim();
+  let tokens = tokenize(s);
+  for (let pipe = filterPipeAt(tokens); pipe > 0; pipe = filterPipeAt(tokens)) {
+    tokens = tokens.slice(0, pipe);
+  }
+  const last = tokens.at(-1);
+  return last ? s.slice(0, last.end) : s;
+}
+
+// The first program of a pipeline (after cd steps and env prefixes), or null
+// when the command line has no unquoted `|`.
+export function pipelineHead(cmd: string): string | null {
+  const s = cmd.replace(/\s+/g, ' ').trim();
+  if (!tokenize(s).some((t) => t.op && t.text === '|')) return null;
+  let tokens = tokenize(s);
+  for (let changed = true; changed;) {
+    changed = false;
+    const first = tokens[0];
+    if (first && !first.op && ASSIGNMENT.test(first.text) && tokens[1] && !tokens[1].op) {
+      tokens = tokens.slice(1);
+      changed = true;
+    } else if (first?.text === 'cd') {
+      const and = tokens.findIndex((t) => t.op);
+      if (and > 0 && tokens[and]?.text === '&&') {
+        tokens = tokens.slice(and + 1);
+        changed = true;
+      }
+    }
+  }
+  const head = tokens[0];
+  return head && !head.op ? head.text : null;
 }

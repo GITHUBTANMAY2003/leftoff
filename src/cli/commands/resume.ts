@@ -6,6 +6,7 @@ import { logError } from '../../core/logger.ts';
 import { ingest, type IngestReport } from '../../ingest/ingest.ts';
 import { resolveProject } from '../../model/project.ts';
 import { polishNow } from '../../polish/summarize.ts';
+import type { PolishProvider } from '../../polish/types.ts';
 import { renderJson } from '../../render/json.ts';
 import { renderMarkdown } from '../../render/markdown.ts';
 import { renderTerminal } from '../../render/terminal.ts';
@@ -13,6 +14,7 @@ import { openDb } from '../../store/db.ts';
 import { createRepo } from '../../store/repo.ts';
 
 const INGEST_BUDGET_MS = 1200;
+const LOCAL_MODEL = 'Generating summary with a local model, this can take a minute…';
 const POLISH_OFF =
   'Polish is off. Turn it on with `leftoff setup` or `leftoff config set polish.provider <claude-cli|ollama|…>`.';
 
@@ -23,6 +25,8 @@ export interface ResumeOptions {
   // `--polish`: run the polish provider now (up to 60 s). Without it a cached
   // polished summary is used only while its facts still match.
   polish: boolean;
+  notify?: (line: string) => void; // progress lines for stderr, printed as they happen
+  providers?: PolishProvider[]; // test seam; default: the configured providers
 }
 
 // `leftoff resume` (§1.10): ingest → live git state → facts → cached polish →
@@ -60,7 +64,18 @@ export async function runResume(
     }
 
     const polishOff = opts.polish && config.polish.provider === 'off';
-    if (opts.polish && !polishOff) await polishNow(root, { repo, config, now, working });
+    if (opts.polish && !polishOff) {
+      await polishNow(root, {
+        repo,
+        config,
+        now,
+        working,
+        ...(opts.providers ? { providers: opts.providers } : {}),
+        onStart: (name) => {
+          if (name === 'ollama') opts.notify?.(LOCAL_MODEL);
+        },
+      });
+    }
     const cached = repo.getBrief(root);
     const polished = cached && cached.factsHash === factsHash(facts) ? cached.polished : null;
     const color = !process.env.NO_COLOR && Boolean(process.stdout.isTTY);

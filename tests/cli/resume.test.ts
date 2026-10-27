@@ -7,6 +7,7 @@ import { factsHash } from '../../src/brief/hash.ts';
 import { runNote } from '../../src/cli/commands/note.ts';
 import { runResume } from '../../src/cli/commands/resume.ts';
 import { DEFAULT_CONFIG, saveConfig, type Config } from '../../src/core/config.ts';
+import type { PolishProvider } from '../../src/polish/types.ts';
 import { ensureHome, paths } from '../../src/core/paths.ts';
 import { openDb } from '../../src/store/db.ts';
 import { createRepo } from '../../src/store/repo.ts';
@@ -181,6 +182,45 @@ test('--polish while polish is off prints one hint line to stderr and still show
   });
   expect(run.stderr).toBe(`${r.stderr}\n`);
   expect(run.stdout).not.toContain('Polish is off');
+});
+
+test('--polish with ollama prints the local-model notice before the call starts; other providers do not', async () => {
+  seed();
+  const events: string[] = [];
+  const provider = (name: 'ollama' | 'claude-cli'): PolishProvider => ({
+    name,
+    available: () => Promise.resolve(true),
+    polish: () => {
+      events.push(`polish ${name}`);
+      return Promise.resolve(`Summary from ${name}.`);
+    },
+  });
+  const config = structuredClone(DEFAULT_CONFIG) as Config;
+  config.polish = { ...config.polish, provider: 'auto', enabled: ['ollama', 'claude-cli'] };
+  saveConfig(config);
+  const notify = (line: string) => events.push(`notice ${line}`);
+  await runResume({
+    cwd: project,
+    format: 'terminal',
+    polish: true,
+    notify,
+    providers: [provider('ollama')],
+  });
+  expect(events).toEqual([
+    'notice Generating summary with a local model, this can take a minute…',
+    'polish ollama',
+  ]);
+  events.length = 0;
+  withRepo((repo) => repo.deleteAll());
+  seed();
+  await runResume({
+    cwd: project,
+    format: 'terminal',
+    polish: true,
+    notify,
+    providers: [provider('claude-cli')],
+  });
+  expect(events).toEqual(['polish claude-cli']);
 });
 
 test('note appears in next resume output', async () => {

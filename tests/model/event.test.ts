@@ -117,6 +117,9 @@ test.each([
   ['make 2>&1 build', 'make build'], // 2>&1 has no file after it
   ['npm test | cat -A', 'npm test | cat -A'], // cat and less only when bare
   ['cd /x; npm test', 'cd /x; npm test'], // only `cd <dir> &&` is stripped
+  // VAR=value followed by ; or && is its own statement, not an env prefix.
+  ['R=/x; export A=1', 'R=/x; export A=1'],
+  ['A=1 && npm test', 'A=1 && npm test'],
 ])('normalizeCommand(%j) → %j', (input, expected) =>
   expect(normalizeCommand(input)).toBe(expected),
 );

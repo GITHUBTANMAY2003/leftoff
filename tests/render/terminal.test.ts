@@ -124,6 +124,37 @@ test('a long contradiction is cut inside the error, so "(still failing)" stays v
   expect(line).toMatch(/^ {2}✗ `npm run lint` — npm error x+… \(still failing\)$/);
 });
 
+test('terminal lists show at most 5 items, then "+N more"', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    unfinished: {
+      files: Array.from({ length: 18 }, (_, i) => ({ path: `src/f${i}.ts`, status: 'modified' })),
+      diffStat: null,
+    },
+  };
+  const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  const at = lines.indexOf('Unfinished');
+  expect(lines.slice(at + 1, at + 8)).toEqual([
+    '  • src/f0.ts (modified)',
+    '  • src/f1.ts (modified)',
+    '  • src/f2.ts (modified)',
+    '  • src/f3.ts (modified)',
+    '  • src/f4.ts (modified)',
+    '  • +13 more',
+    '',
+  ]);
+});
+
+test('a long line is cut at a word boundary when there is one near the end', () => {
+  const f: BriefFacts = { ...rahulFacts(), notes: [`${'word '.repeat(30)}end`] };
+  const line = renderTerminal(f, null, { color: false, now: RAHUL_NOW })
+    .split('\n')
+    .find((l) => l.startsWith('  • word')) as string;
+  expect(line).toMatch(/word…$/);
+  expect([...line].length).toBeLessThanOrEqual(100);
+  expect(line).not.toMatch(/wor…$|wo…$|w…$/);
+});
+
 test('Notes render after Open problems and before Next step', () => {
   const f: BriefFacts = { ...rahulFacts(), notes: ['ask ops about the relay'] };
   const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');

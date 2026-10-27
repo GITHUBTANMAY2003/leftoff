@@ -1,6 +1,7 @@
 import { Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { logError } from '../core/logger.ts';
+import { runHook, type HookName } from './commands/hook.ts';
 import { runInternalSummarizeCommand } from './commands/internal.ts';
 import { runLoops } from './commands/loops.ts';
 import { runNote } from './commands/note.ts';
@@ -34,7 +35,8 @@ program
   .action(async (o: { project?: string; json?: boolean; md?: boolean; polish?: boolean }) => {
     const format = o.json ? 'json' : o.md ? 'md' : 'terminal';
     const polish = Boolean(o.polish);
-    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish }));
+    const notify = (line: string) => process.stderr.write(line + '\n');
+    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish, notify }));
   });
 
 program
@@ -63,7 +65,30 @@ program
     process.stdout.write('Noted.\n');
   });
 
+// Hook input on stdin; '' for a terminal, and at most 1 s of waiting.
+function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return Promise.resolve('');
+  return new Promise((resolve) => {
+    let data = '';
+    const done = () => resolve(data);
+    setTimeout(done, 1000).unref();
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk: string) => (data += chunk));
+    process.stdin.on('end', done);
+    process.stdin.on('error', done);
+  });
+}
+
 // Hidden: used by hooks and background jobs.
+program
+  .command('hook', { hidden: true })
+  .argument('<name>')
+  .action(async (name: string) => {
+    const { stdout } = await runHook(name as HookName, await readStdin());
+    // Exit now: work abandoned past the hook's budget must not keep it running.
+    process.stdout.write(stdout, () => process.exit(0));
+  });
+
 program
   .command('internal', { hidden: true })
   .command('summarize')

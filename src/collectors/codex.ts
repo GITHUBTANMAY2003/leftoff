@@ -7,8 +7,9 @@ import { dedupeKey, makeEvent, type EventKind, type WorkEvent } from '../model/e
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom, readZstJsonl } from './jsonl-reader.ts';
+import { isScratchCommand } from './scratch.ts';
 import { isProbeFailure } from './probes.ts';
-import { isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
+import { isFilteredExit, isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Codex CLI collector (plan Task 7). Record shapes come from a real codex-cli
@@ -112,7 +113,7 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
       const exitCode =
         typeof item.exit_code === 'number' ? item.exit_code : item.status === 'failed' ? 1 : 0;
       const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : '';
-      if (item.status !== 'failed' && exitCode === 0) {
+      if ((item.status !== 'failed' && exitCode === 0) || isFilteredExit(command, output)) {
         if (isMaskedTestFailure(command, output)) return [testFailed(command, output.trim())];
         return [{ kind: 'command', summary: command, data: { command, exitCode } }];
       }
@@ -125,6 +126,7 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
             exitCode,
             error: output.trim().slice(0, MAX_ERROR_CHARS),
             ...(isProbeFailure(command, exitCode, output) ? { probe: true } : {}),
+            ...(isScratchCommand(command) ? { scratch: true } : {}),
           },
         },
       ];

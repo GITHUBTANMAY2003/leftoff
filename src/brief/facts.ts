@@ -2,7 +2,17 @@ import { basename, isAbsolute, relative } from 'node:path';
 import type { WorkingState } from '../collectors/git.ts';
 import type { Config } from '../core/config.ts';
 import type { CollectorName, IngestReport } from '../ingest/ingest.ts';
-import { normalizeCommand, type Source, type WorkEvent } from '../model/event.ts';
+import { isProbeFailure } from '../collectors/probes.ts';
+import { isScratchCommand } from '../collectors/scratch.ts';
+import { isFilteredExit } from '../collectors/test-failures.ts';
+import {
+  commandFiles,
+  commandKey,
+  normalizeCommand,
+  withoutFilters,
+  type Source,
+  type WorkEvent,
+} from '../model/event.ts';
 import type { Repo } from '../store/repo.ts';
 import { chooseNextStep } from './next-step.ts';
 import { splitSessions } from './sessions.ts';
@@ -70,6 +80,91 @@ const firstLine = (text: string) =>
     .find((l) => l.trim() !== '')
     ?.trim() ?? '';
 
+// Displayed text is one line (owner decision after Task 13): whitespace is
+// collapsed; a multi-line command shows its first line + " …".
+const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+const oneLineCommand = (text: string) => {
+  const lines = text.trim().split('\n');
+  return lines.length > 1 ? `${collapse(lines[0] as string)} …` : collapse(text);
+};
+// Stored texts are cut to 300 characters, the start or the end marked with
+// "…"; move such a cut to a word boundary.
+function quote(text: string | null): string | null {
+  if (text === null) return null;
+  let t = collapse(text);
+  if (t.startsWith('…') && !t.startsWith('… ')) {
+    const space = t.indexOf(' ');
+    if (space !== -1) t = `…${t.slice(space + 1)}`;
+  }
+  if (t.endsWith('…') && !t.endsWith(' …')) {
+    const space = t.lastIndexOf(' ');
+    if (space > 0) t = `${t.slice(0, space).replace(/[\s,;:]+$/, '')}…`;
+  }
+  return t;
+}
+
+// The claim as shown (owner decision after Task 13): the sentence with the
+// done-word, at most about 100 characters, cut at word boundaries around it.
+const MAX_CLAIM_CHARS = 100;
+function claimSentence(text: string): string {
+  const t = quote(text) ?? '';
+  const m = CLAIM.exec(t);
+  if (!m) return t;
+  const ends = [...t.slice(0, m.index).matchAll(/[.!?]\s/g)];
+  const start = ends.length > 0 ? (ends.at(-1)?.index ?? -2) + 2 : 0;
+  const after = t.slice(m.index).search(/[.!?](\s|$)/);
+  const end = after === -1 ? t.length : m.index + after + 1;
+  const sentence = t.slice(start, end);
+  if ([...sentence].length <= MAX_CLAIM_CHARS) return sentence;
+  // A window around the done-word, narrowed to whole words.
+  const at = m.index - start;
+  let from = Math.max(0, at - 45);
+  let to = Math.min(sentence.length, from + MAX_CLAIM_CHARS - 2);
+  if (from > 0) from = sentence.indexOf(' ', from) + 1;
+  if (to < sentence.length) to = sentence.lastIndexOf(' ', to);
+  return `${from > 0 ? '…' : ''}${sentence.slice(from, to)}${to < sentence.length ? '…' : ''}`;
+}
+
+const AGENTS = new Set<Source>(['claude', 'codex']);
+// Scratch failures (owner decision after Task 13) are stored but are not loose
+// ends, like probes. Events stored before the rule are classified here too.
+const isScratch = (e: WorkEvent) =>
+  e.data.scratch === true ||
+  (AGENTS.has(e.source) && typeof e.data.command === 'string' && isScratchCommand(e.data.command));
+
+const rawCommand = (e: WorkEvent) => (typeof e.data.command === 'string' ? e.data.command : null);
+const outputOf = (e: WorkEvent) => (typeof e.data.error === 'string' ? e.data.error : '');
+// Probes are decided again when reading, so older events follow today's list.
+const isProbe = (e: WorkEvent) => {
+  const command = rawCommand(e);
+  return (
+    e.data.probe === true ||
+    (command !== null &&
+      typeof e.data.exitCode === 'number' &&
+      isProbeFailure(command, e.data.exitCode, outputOf(e)))
+  );
+};
+// An agent command that only "failed" because the filter it was piped into
+// exited non-zero counts as a success (owner decision after Task 13).
+const isFilteredPass = (e: WorkEvent) => {
+  const command = rawCommand(e);
+  return (
+    e.kind === 'command_failed' &&
+    AGENTS.has(e.source) &&
+    command !== null &&
+    isFilteredExit(command, outputOf(e))
+  );
+};
+// A success resolves a failure with the same program + subcommand; a failure
+// with file arguments only by a run with the same files or none (owner
+// decisions after Task 13).
+function resolves(success: string, failure: string): boolean {
+  if (commandKey(success) !== commandKey(failure)) return false;
+  const failed = commandFiles(failure);
+  const ran = commandFiles(success);
+  return failed.length === 0 || ran.length === 0 || ran.join('\0') === failed.join('\0');
+}
+
 const commandOf = (e: WorkEvent): string | null =>
   typeof e.data.command === 'string' ? normalizeCommand(e.data.command) : null;
 
@@ -106,15 +201,21 @@ function problemGroups(events: WorkEvent[]): Map<string, ProblemGroup> {
   const groups = new Map<string, ProblemGroup>();
   events.forEach((e, index) => {
     const command = commandOf(e);
-    if (FAILURES.has(e.kind) && e.data.probe === true) return; // stored, but not a loose end
-    if (FAILURES.has(e.kind)) {
+    const succeeded = e.kind === 'command' || isFilteredPass(e);
+    if (!succeeded && FAILURES.has(e.kind) && (isProbe(e) || isScratch(e))) return; // stored, not a loose end
+    if (!succeeded && FAILURES.has(e.kind)) {
       const key =
         command !== null ? `cmd:${command}` : `${e.kind}:${String(e.data.tool)}:${e.summary}`;
       const group = groups.get(key) ?? { failures: [], firstIndex: index };
       group.failures.push(e);
       groups.set(key, group);
-    } else if (e.kind === 'command' && command !== null) {
-      groups.delete(`cmd:${command}`);
+    } else if (succeeded && command !== null) {
+      // A filtered pass speaks for the command before the filter.
+      const ran = e.kind === 'command' ? command : normalizeCommand(withoutFilters(command));
+      for (const [name, group] of groups) {
+        const failed = commandOf(group.failures[0] as WorkEvent);
+        if (failed !== null && resolves(ran, failed)) groups.delete(name);
+      }
     }
   });
   return groups;
@@ -125,8 +226,9 @@ export function findOpenProblems(events: WorkEvent[]): OpenProblem[] {
     .map((group) => {
       const attempts: string[] = [];
       for (const e of events.slice(group.firstIndex + 1)) {
-        if ((e.kind === 'file_edit' || e.kind === 'command') && !attempts.includes(e.summary))
-          attempts.push(e.summary);
+        if (e.kind !== 'file_edit' && e.kind !== 'command') continue;
+        const attempt = e.kind === 'command' ? oneLineCommand(e.summary) : collapse(e.summary);
+        if (!attempts.includes(attempt)) attempts.push(attempt);
         if (attempts.length === MAX_ATTEMPTS) break;
       }
       const newest = group.failures.at(-1) as WorkEvent;
@@ -180,7 +282,12 @@ export function detectClaimedDone(
     contradictions.push(`${uncommittedCount} uncommitted file${uncommittedCount === 1 ? '' : 's'}`);
   }
   if (contradictions.length === 0) return null;
-  return { source: claim.source, message: claim.summary, at: claim.ts, contradictions };
+  return {
+    source: claim.source,
+    message: claimSentence(claim.summary),
+    at: claim.ts,
+    contradictions,
+  };
 }
 
 // Edited files in first-edit order, relative to the project root.
@@ -245,7 +352,7 @@ export function buildFacts(
   const window =
     last.length < 3 && sessions.length > 1 ? [...(sessions.at(-2) as WorkEvent[]), ...last] : last;
   const newest = (kind: string) =>
-    [...window].reverse().find((e) => e.kind === kind)?.summary ?? null;
+    quote([...window].reverse().find((e) => e.kind === kind)?.summary ?? null);
 
   const commits = window.filter((e) => e.kind === 'commit').map((e) => e.summary);
   const edited = editedFilesLine(window, root);

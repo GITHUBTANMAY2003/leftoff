@@ -72,7 +72,7 @@ test('auto tries next provider when first throws or times out', async () => {
   const works = fake('ollama', () => Promise.resolve('You were fixing SMTP.'));
   const c = config({ provider: 'auto' });
   const started = Date.now();
-  expect(await polishWith([throws, hangs, works], 'prompt', c, 50)).toEqual({
+  expect(await polishWith([throws, hangs, works], 'prompt', c, () => 50)).toEqual({
     polished: 'You were fixing SMTP.',
     provider: 'ollama',
   });
@@ -80,13 +80,39 @@ test('auto tries next provider when first throws or times out', async () => {
   expect([throws.calls, hangs.calls, works.calls]).toEqual([1, 1, 1]);
 });
 
+test('each provider gets its own timeout, and onStart is told which provider starts', async () => {
+  const seen: [string, number][] = [];
+  const record = (name: PolishProviderName): PolishProvider => ({
+    name,
+    available: () => Promise.resolve(true),
+    polish: (_prompt, timeoutMs) => {
+      seen.push([name, timeoutMs]);
+      return Promise.resolve(name === 'ollama' ? 'done' : '');
+    },
+  });
+  const started: string[] = [];
+  const r = await polishWith(
+    [record('claude-cli'), record('ollama')],
+    'p',
+    config({}),
+    (name) => (name === 'ollama' ? 180 : 60),
+    (name) => started.push(name),
+  );
+  expect(r?.provider).toBe('ollama');
+  expect(seen).toEqual([
+    ['claude-cli', 60],
+    ['ollama', 180],
+  ]);
+  expect(started).toEqual(['claude-cli', 'ollama']);
+});
+
 test('invalid polish output is discarded', async () => {
   const empty = fake('claude-cli', () => Promise.resolve('   '));
   const tooLong = fake('codex-cli', () => Promise.resolve('a'.repeat(1201)));
   const c = config({ provider: 'auto' });
-  expect(await polishWith([empty, tooLong], 'prompt', c, 1000)).toBeNull();
+  expect(await polishWith([empty, tooLong], 'prompt', c, () => 1000)).toBeNull();
   const good = fake('ollama', () => Promise.resolve(' Fine. '));
-  expect(await polishWith([empty, good], 'prompt', c, 1000)).toEqual({
+  expect(await polishWith([empty, good], 'prompt', c, () => 1000)).toEqual({
     polished: 'Fine.',
     provider: 'ollama',
   });
@@ -95,7 +121,7 @@ test('invalid polish output is discarded', async () => {
 test('an unavailable provider is skipped without being called', async () => {
   const missing = fake('claude-cli', () => Promise.resolve('never'), false);
   const works = fake('ollama', () => Promise.resolve('ok'));
-  expect(await polishWith([missing, works], 'p', config({}), 1000)).toEqual({
+  expect(await polishWith([missing, works], 'p', config({}), () => 1000)).toEqual({
     polished: 'ok',
     provider: 'ollama',
   });

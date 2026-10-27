@@ -1,0 +1,39 @@
+{
+  "description": "leftoff: inject where you left off at session start; record session checkpoints and ends.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "L=\"${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff\"; if [ -x \"$L\" ]; then \"$L\" hook claude-session-start; elif command -v leftoff >/dev/null 2>&1; then leftoff hook claude-session-start; fi; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "L=\"${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff\"; if [ -x \"$L\" ]; then \"$L\" hook claude-stop; elif command -v leftoff >/dev/null 2>&1; then leftoff hook claude-stop; fi; exit 0",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "L=\"${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff\"; if [ -x \"$L\" ]; then \"$L\" hook claude-session-end; elif command -v leftoff >/dev/null 2>&1; then leftoff hook claude-session-end; fi; exit 0",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

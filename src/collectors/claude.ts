@@ -6,8 +6,9 @@ import { dedupeKey, makeEvent, type EventKind, type WorkEvent } from '../model/e
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom } from './jsonl-reader.ts';
+import { isScratchCommand } from './scratch.ts';
 import { isProbeFailure, isReadOnlyTool } from './probes.ts';
-import { isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
+import { isFilteredExit, isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Claude Code collector (plan Task 6). Reads session transcripts incrementally.
@@ -91,7 +92,8 @@ function resultDrafts(
     const exitCode = exit ? Number(exit[1]) : isError ? 1 : 0;
     const command = tool.command;
     if (!isError && isMaskedTestFailure(command, output)) return [testFailed(command, output)];
-    if (!isError) return [{ kind: 'command', summary: command, data: { command, exitCode } }];
+    if (!isError || isFilteredExit(command, output))
+      return [{ kind: 'command', summary: command, data: { command, exitCode } }];
     const error = (exit ? output.slice(exit[0].length) : output).trim();
     const drafts: Draft[] = [
       {
@@ -102,6 +104,7 @@ function resultDrafts(
           exitCode,
           error: error.slice(0, MAX_ERROR_CHARS),
           ...(isProbeFailure(command, exitCode, output) ? { probe: true } : {}),
+          ...(isScratchCommand(command) ? { scratch: true } : {}),
         },
       },
     ];

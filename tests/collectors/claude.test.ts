@@ -314,6 +314,45 @@ test('a failing test run piped through `| tail` (exit 0 from tail) is still test
   ]);
 });
 
+test("a command piped into a filter: the filter's exit code is not the project's", async () => {
+  const cmd = 'npx vitest run | grep FAIL';
+  writeFileSync(
+    join(projectDir, 'filtered.jsonl'),
+    toolUse('toolu_a', 'Bash', { command: cmd }) +
+      toolResult('toolu_a', 'Exit code 1', true) + // grep found nothing: tests passed
+      toolUse('toolu_b', 'Bash', { command: cmd }) +
+      toolResult(
+        'toolu_b',
+        'Exit code 1\n FAIL  tests/a.test.ts\nTests  1 failed | 3 passed',
+        true,
+      ) +
+      // grep exits 0 because it found FAIL lines: still a failed test run.
+      toolUse('toolu_c', 'Bash', { command: cmd }) +
+      toolResult('toolu_c', ' FAIL  tests/a.test.ts', false),
+  );
+  expect((await collect()).events.map((e) => e.kind)).toEqual([
+    'command',
+    'command_failed',
+    'test_failed',
+    'test_failed',
+  ]);
+});
+
+test('a failing scratch command is stored with data.scratch = true', async () => {
+  writeFileSync(
+    join(projectDir, 'scratch.jsonl'),
+    toolUse('toolu_x', 'Bash', { command: 'python3 -c "import nope"' }) +
+      toolResult('toolu_x', 'Exit code 1\nModuleNotFoundError', true) +
+      toolUse('toolu_y', 'Bash', { command: 'npm test' }) +
+      toolResult('toolu_y', 'Exit code 1\nboom', true),
+  );
+  const failed = (await collect()).events.filter((e) => e.kind === 'command_failed');
+  expect(failed.map((e) => [e.data.command, e.data.scratch])).toEqual([
+    ['python3 -c "import nope"', true],
+    ['npm test', undefined],
+  ]);
+});
+
 test('sessions whose cwd is inside LEFTOFF_HOME are ignored', async () => {
   writeFileSync(
     join(projectDir, 'polish.jsonl'),

@@ -1,0 +1,14 @@
+{
+  "name": "leftoff",
+  "description": "leftoff: pick up where you left off, across your terminal, git and coding agents.",
+  "owner": {
+    "name": "Tanmay Kumar"
+  },
+  "plugins": [
+    {
+      "name": "leftoff",
+      "source": "./plugin",
+      "description": "Where you left off: a short brief of your last session at startup, from your git, shell and agent history."
+    }
+  ]
+}

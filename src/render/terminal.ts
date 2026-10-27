@@ -1,6 +1,7 @@
 import { problemText, type BriefFacts } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
 import { splitProblems } from './problems.ts';
+import { capItems, clip } from './text.ts';
 
 // The terminal brief (spec §1.8; the §1.1 example is the exact reference).
 // Headings in this order; empty sections omitted; no footer after Sources.
@@ -10,10 +11,11 @@ import { splitProblems } from './problems.ts';
 export const LINE_WIDTH = 100;
 
 export function fit(prefix: string, text: string, width = LINE_WIDTH): string {
-  const room = width - [...prefix].length;
-  const chars = [...text];
-  return chars.length <= room ? text : chars.slice(0, Math.max(0, room - 1)).join('') + '…';
+  return clip(text, width - [...prefix].length);
 }
+
+// Lists show at most this many items, then "+N more" (owner decision after Task 13).
+const MAX_ITEMS = 5;
 
 // Cuts `text` but keeps `tail` whole after it, so an ending such as
 // "(still failing)" or "(2 attempts)" always survives (owner decision, Task 11).
@@ -89,23 +91,31 @@ export function renderTerminal(
     }`,
     ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
   ];
+  // At most MAX_ITEMS problems, each with its tried: line, then "+N more".
+  const problems = (items: { text: string; attempts: string[] }[]) => [
+    ...items.slice(0, MAX_ITEMS).flatMap((x) => problem(x.text, x.attempts)),
+    ...(items.length > MAX_ITEMS ? [bullet(`+${items.length - MAX_ITEMS} more`)] : []),
+  ];
   const { claimed, open } = splitProblems(f);
 
   if (f.claimedDone) {
     const c = f.claimedDone;
     section('Agent said done, but', [
       fit('', `  ${c.source} said: "${c.message}" (${relativeAgo(c.at, now)})`),
-      ...claimed.flatMap((x) => problem(x.text, x.attempts)),
+      ...problems(claimed),
     ]);
   }
-  section('Done', f.done.map(bullet));
+  section('Done', capItems(f.done, MAX_ITEMS).map(bullet));
   section(
     'Unfinished',
-    f.unfinished.files.map((file) => bullet(`${file.path} (${file.status})`)),
+    capItems(
+      f.unfinished.files.map((file) => `${file.path} (${file.status})`),
+      MAX_ITEMS,
+    ).map(bullet),
   );
   section(
     'Open problems',
-    open.flatMap((o) => problem(problemText(o), o.attempts)),
+    problems(open.map((o) => ({ text: problemText(o), attempts: o.attempts }))),
   );
   section('Notes', f.notes.map(bullet));
   section('Next step', f.nextStep ? [`  ${p.cyan('→')} ${fit('  → ', f.nextStep)}`] : []);

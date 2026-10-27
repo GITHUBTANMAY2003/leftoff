@@ -30,6 +30,10 @@ test.each([
   ['git cat-file -e abc123', 1],
   ['diff a.txt b.txt', 1],
   ['cmp a.bin b.bin', 2],
+  // exit 1 means "differences found" (owner decision after Task 13)
+  ['git diff --no-index -- /dev/null tests/test_x.py', 1],
+  ['git diff --exit-code', 1],
+  ['git diff --stat HEAD~1', 1],
   ['cat calc.js && cat calc.test.js', 1], // every part is a probe
   ['rg TODO | head -20', 1],
   ['cd src && ls missing', 1],

@@ -10,14 +10,20 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { buildFacts } from '../../src/brief/facts.ts';
 import { factsHash } from '../../src/brief/hash.ts';
-import { DEFAULT_CONFIG, saveConfig, type Config } from '../../src/core/config.ts';
+import {
+  DEFAULT_CONFIG,
+  saveConfig,
+  type Config,
+  type PolishProviderName,
+} from '../../src/core/config.ts';
 import { ensureHome, paths } from '../../src/core/paths.ts';
 import {
   polishNow,
   runInternalSummarize,
+  SUMMARIZE_LOCK_TTL_MS,
   spawnBackgroundSummarize,
 } from '../../src/polish/summarize.ts';
 import type { PolishProvider } from '../../src/polish/types.ts';
@@ -72,13 +78,19 @@ const polishConfig = (provider: Config['polish']['provider'] = 'auto'): Config =
   return c;
 };
 
-function fake(reply: string, delayMs = 0): PolishProvider & { calls: number } {
+function fake(
+  reply: string,
+  delayMs = 0,
+  name: PolishProviderName = 'ollama',
+): PolishProvider & { calls: number; timeouts: number[] } {
   const p = {
-    name: 'ollama' as const,
+    name,
     calls: 0,
+    timeouts: [] as number[],
     available: () => Promise.resolve(true),
-    polish: async () => {
+    polish: async (_prompt: string, timeoutMs: number) => {
       p.calls++;
+      p.timeouts.push(timeoutMs);
       await new Promise((r) => setTimeout(r, delayMs));
       return reply;
     },
@@ -187,6 +199,58 @@ test('two concurrent summarizes: only one calls the provider', async () => {
   expect(withRepo((repo) => repo.acquireLock(`summarize:${project}`, 'someone-else', 1000))).toBe(
     true,
   );
+});
+
+test('background summarize gives ollama 180 s and other providers 60 s; foreground polish 60 s', async () => {
+  seed();
+  saveConfig(polishConfig());
+  const ollama = fake('', 0, 'ollama');
+  const claude = fake('', 0, 'claude-cli');
+  await runInternalSummarize(project, { providers: [ollama, claude] });
+  expect(ollama.timeouts).toEqual([180_000]);
+  expect(claude.timeouts).toEqual([60_000]);
+  const foreground = fake('ok', 0, 'ollama');
+  await withRepoAsync(async (repo) => {
+    await polishNow(project, {
+      repo,
+      config: polishConfig(),
+      now: NOW,
+      working: null,
+      providers: [foreground],
+    });
+  });
+  expect(foreground.timeouts).toEqual([60_000]);
+});
+
+test('the summarize lock outlives the slowest provider: a second run cannot start while a slow ollama call is still running', async () => {
+  expect(SUMMARIZE_LOCK_TTL_MS).toBe(180_000 + 60_000);
+  seed();
+  saveConfig(polishConfig());
+  let finish: (text: string) => void = () => {};
+  let calledResolve: () => void = () => {};
+  const called = new Promise<void>((r) => (calledResolve = r));
+  const slow: PolishProvider = {
+    name: 'ollama',
+    available: () => Promise.resolve(true),
+    polish: () => {
+      calledResolve();
+      return new Promise<string>((r) => (finish = r));
+    },
+  };
+  vi.useFakeTimers({ toFake: ['Date'] }); // only the clock; real timers keep running
+  try {
+    const first = runInternalSummarize(project, { providers: [slow] });
+    await called;
+    // 181 s later: past the old 120 s lock, still within ollama's 180 s timeout.
+    vi.setSystemTime(Date.now() + 181_000);
+    const second = fake('Second run.');
+    await runInternalSummarize(project, { providers: [second] });
+    expect(second.calls).toBe(0);
+    finish('First run.');
+    await first;
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('internal summarize with polish off still ingests and calls no provider', async () => {

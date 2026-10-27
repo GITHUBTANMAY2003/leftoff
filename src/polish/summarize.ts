@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { buildFacts } from '../brief/facts.ts';
 import { factsHash } from '../brief/hash.ts';
 import { readWorkingState, type WorkingState } from '../collectors/git.ts';
-import { loadConfig, type Config } from '../core/config.ts';
+import { loadConfig, type Config, type PolishProviderName } from '../core/config.ts';
 import { logError } from '../core/logger.ts';
 import { ensureHome, paths } from '../core/paths.ts';
 import { ingest } from '../ingest/ingest.ts';
@@ -14,10 +14,18 @@ import { buildPolishPrompt } from './prompt.ts';
 import type { PolishProvider } from './types.ts';
 
 const POLISH_TIMEOUT_MS = 60_000;
+// In the background a local model may first have to load: ollama gets longer
+// (owner decision after Task 12). Foreground `--polish` keeps 60 s for all.
+const BACKGROUND_TIMEOUTS: Partial<Record<PolishProviderName, number>> = { ollama: 180_000 };
+const backgroundTimeout = (name: PolishProviderName) =>
+  BACKGROUND_TIMEOUTS[name] ?? POLISH_TIMEOUT_MS;
 // Background runs may ingest for longer than foreground commands (owner
 // decision after Task 8).
 const SUMMARIZE_INGEST_BUDGET_MS = 20_000;
-const LOCK_TTL_MS = 120_000;
+// The lock must outlive the slowest provider, or a second run could start
+// while the first is still waiting on it (owner decision after Task 12).
+export const SUMMARIZE_LOCK_TTL_MS =
+  Math.max(POLISH_TIMEOUT_MS, ...Object.values(BACKGROUND_TIMEOUTS)) + 60_000;
 
 export interface PolishDeps {
   repo: Repo;
@@ -25,7 +33,8 @@ export interface PolishDeps {
   now: Date;
   working: WorkingState | null;
   providers?: PolishProvider[]; // default: pickProviders(config)
-  timeoutMs?: number;
+  timeoutFor?: (name: PolishProviderName) => number; // default: 60 s for every provider
+  onStart?: (name: PolishProviderName) => void;
 }
 
 // Polishes the project's current facts unless a summary for the same facts is
@@ -47,7 +56,8 @@ export async function polishNow(
     deps.providers ?? pickProviders(config),
     buildPolishPrompt(facts),
     config,
-    deps.timeoutMs ?? POLISH_TIMEOUT_MS,
+    deps.timeoutFor ?? (() => POLISH_TIMEOUT_MS),
+    deps.onStart,
   );
   if (!result) return { polished: null, provider: null };
   repo.saveBrief(root, hash, JSON.stringify(facts), result.polished, result.provider);
@@ -67,7 +77,7 @@ export async function runInternalSummarize(
     // Unique per run, so two runs in one process don't share the lock either.
     const holder = `${process.pid}:${randomUUID()}`;
     const lock = `summarize:${root}`;
-    if (!repo.acquireLock(lock, holder, LOCK_TTL_MS)) return;
+    if (!repo.acquireLock(lock, holder, SUMMARIZE_LOCK_TTL_MS)) return;
     try {
       try {
         await ingest({ repo, config, now: new Date() }, { budgetMs: SUMMARIZE_INGEST_BUDGET_MS });
@@ -80,6 +90,7 @@ export async function runInternalSummarize(
           config,
           now: new Date(),
           working: readWorkingState(root),
+          timeoutFor: backgroundTimeout,
           ...(deps.providers ? { providers: deps.providers } : {}),
         });
       }

@@ -390,6 +390,54 @@ test('a failing test run piped through `| tail` (exit 0 from tail) is still test
   expect(run('Tests: 5 passed')).toEqual(['command']);
 });
 
+test("a command piped into a filter: the filter's exit code is not the project's", () => {
+  const run = (output: string) =>
+    parseCodexRecord(
+      {
+        timestamp: '2026-10-26T15:00:00.000Z',
+        ordinal: 8,
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          thread_id: 't',
+          item: {
+            type: 'CommandExecution',
+            command: ['bash', '-lc', 'npm test 2>&1 | grep -E "FAIL|failed"'],
+            status: 'failed',
+            exit_code: 1,
+            aggregated_output: output,
+          },
+        },
+      },
+      { cwd: FIXTURE_CWD },
+    ).map((e) => e.kind);
+  expect(run('')).toEqual(['command']);
+  expect(run('Tests: 2 failed, 5 passed')).toEqual(['command_failed', 'test_failed']);
+});
+
+test('a failing scratch command is stored with data.scratch = true', () => {
+  const [e] = parseCodexRecord(
+    {
+      timestamp: '2026-10-26T15:00:00.000Z',
+      ordinal: 7,
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        thread_id: 't',
+        item: {
+          type: 'CommandExecution',
+          command: ['bash', '-lc', 'node -e "boom()"'],
+          status: 'completed',
+          exit_code: 1,
+          aggregated_output: 'ReferenceError: boom is not defined',
+        },
+      },
+    },
+    { cwd: FIXTURE_CWD },
+  );
+  expect(e).toMatchObject({ kind: 'command_failed', data: { scratch: true } });
+});
+
 test('only item_completed counts: an item_started record with the same item adds nothing', () => {
   const rec = (type: string) => ({
     timestamp: '2026-10-26T15:00:00.000Z',

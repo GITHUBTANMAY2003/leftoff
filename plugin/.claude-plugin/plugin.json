@@ -1,0 +1,9 @@
+{
+  "name": "leftoff",
+  "version": "0.0.1",
+  "description": "Where you left off: a short brief of your last session at startup, from your git, shell and agent history.",
+  "author": {
+    "name": "Tanmay Kumar"
+  },
+  "license": "MIT"
+}

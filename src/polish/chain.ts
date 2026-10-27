@@ -43,16 +43,20 @@ function withTimeout<T>(work: Promise<T>, ms: number, name: string): Promise<T> 
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
-// Tries each provider in turn; the first valid reply wins. Failures are logged.
+// Tries each provider in turn, each with its own timeout; the first valid reply
+// wins. Failures are logged. `onStart` hears which provider is about to run.
 export async function polishWith(
   providers: PolishProvider[],
   prompt: string,
   config: Config,
-  timeoutMs: number,
+  timeoutFor: (name: PolishProviderName) => number,
+  onStart?: (name: PolishProviderName) => void,
 ): Promise<{ polished: string; provider: PolishProviderName } | null> {
   for (const p of providers) {
     try {
       if (!(await p.available(config))) continue;
+      const timeoutMs = timeoutFor(p.name);
+      onStart?.(p.name);
       const polished = validatePolish(
         await withTimeout(p.polish(prompt, timeoutMs), timeoutMs, p.name),
       );
