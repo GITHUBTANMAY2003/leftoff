@@ -2,6 +2,13 @@ import { Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { logError } from '../core/logger.ts';
 import { runBriefAuto } from './commands/brief-auto.ts';
+import { runConfig } from './commands/config.ts';
+import { renderDoctor, runDoctor } from './commands/doctor.ts';
+import { runForget } from './commands/forget.ts';
+import { detectSetupEnv, runSetup } from './commands/setup.ts';
+import { runStatus } from './commands/status.ts';
+import { runUninstall } from './commands/uninstall.ts';
+import { terminalPrompter } from './prompter.ts';
 import { runHook, type HookName } from './commands/hook.ts';
 import { runInternalIngestCommand, runInternalSummarizeCommand } from './commands/internal.ts';
 import { runLoops } from './commands/loops.ts';
@@ -64,6 +71,80 @@ program
   .action(async (words: string[]) => {
     await runNote(process.cwd(), words.join(' '));
     process.stdout.write('Noted.\n');
+  });
+
+program
+  .command('status')
+  .description('tracked projects, the last ingest per collector, event counts')
+  .action(async () => {
+    process.stdout.write((await runStatus()) + '\n');
+  });
+
+program
+  .command('forget')
+  .description(
+    'delete stored data (all events, cached briefs and shown markers); read positions ' +
+      '(file paths and offsets, no content) are kept so forgotten history is not read in again',
+  )
+  .option('--project <path>', 'forget one project')
+  .option('--all', 'forget everything')
+  .option('--yes', 'do not ask for confirmation')
+  .action(async (o: { project?: string; all?: boolean; yes?: boolean }) => {
+    const io = await terminalPrompter();
+    try {
+      const output = await runForget(
+        {
+          ...(o.project !== undefined ? { project: o.project } : {}),
+          all: Boolean(o.all),
+          yes: Boolean(o.yes),
+        },
+        io,
+      );
+      process.stdout.write(output + '\n');
+      if (output.startsWith('Use --project')) process.exitCode = 1;
+    } finally {
+      io.close();
+    }
+  });
+
+program
+  .command('config')
+  .description('read or change settings: list | get <key> | set <key> <value>')
+  .argument('[args...]', 'list, get <key>, or set <key> <value>')
+  .allowUnknownOption()
+  .action(async (args: string[]) => print(await runConfig(args)));
+
+program
+  .command('setup')
+  .description('install the shell hook, the Claude Code plugin and choose AI summaries')
+  .action(async () => {
+    const io = await terminalPrompter();
+    try {
+      await runSetup(io, detectSetupEnv());
+    } finally {
+      io.close();
+    }
+  });
+
+program
+  .command('doctor')
+  .description('check that everything works, with a fix hint for each problem')
+  .action(async () => {
+    const result = await runDoctor();
+    process.stdout.write(renderDoctor(result) + '\n');
+    process.exitCode = result.exitCode;
+  });
+
+program
+  .command('uninstall')
+  .description('remove the shell hook blocks and print the plugin removal commands')
+  .action(async () => {
+    const io = await terminalPrompter();
+    try {
+      process.stdout.write((await runUninstall(io)) + '\n');
+    } finally {
+      io.close();
+    }
   });
 
 // Hook input on stdin; '' for a terminal, and at most 1 s of waiting.

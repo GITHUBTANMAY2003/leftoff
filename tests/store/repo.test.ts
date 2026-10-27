@@ -239,3 +239,27 @@ test('transaction rolls back events and cursors when it throws', () => {
 test('transaction returns the value of its function', () => {
   expect(repo.transaction(() => repo.insertEvents([ev('a'), ev('b')]))).toBe(2);
 });
+
+test('lastEventTs finds the newest event by source and/or kind, or null', () => {
+  expect(repo.lastEventTs({ source: 'shell' })).toBeNull();
+  repo.insertEvents([
+    ev('a', { source: 'shell', kind: 'command', ts: '2026-10-20T10:00:00.000Z' }),
+    ev('b', { source: 'shell', kind: 'command_failed', ts: '2026-10-21T10:00:00.000Z' }),
+    ev('c', { source: 'claude', kind: 'session_start', ts: '2026-10-19T10:00:00.000Z' }),
+  ]);
+  expect(repo.lastEventTs({ source: 'shell' })).toBe('2026-10-21T10:00:00.000Z');
+  expect(repo.lastEventTs({ kind: 'session_start' })).toBe('2026-10-19T10:00:00.000Z');
+  expect(repo.lastEventTs({ source: 'shell', kind: 'command' })).toBe('2026-10-20T10:00:00.000Z');
+  expect(repo.lastEventTs({ source: 'codex' })).toBeNull();
+});
+
+test('countEvents counts all events, or those of one project', () => {
+  repo.insertEvents([
+    ev('1', { projectRoot: '/a' }),
+    ev('2', { projectRoot: '/a' }),
+    ev('3', { projectRoot: '/b' }),
+  ]);
+  expect(repo.countEvents()).toBe(3);
+  expect(repo.countEvents('/a')).toBe(2);
+  expect(repo.countEvents('/none')).toBe(0);
+});

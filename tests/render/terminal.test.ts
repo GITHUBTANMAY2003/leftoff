@@ -217,3 +217,44 @@ test('with color, the text is the same once the ANSI codes are removed', () => {
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(colored.replace(/\x1b\[[0-9;]*m/g, '')).toBe(plain);
 });
+
+test('open problems keep the error visible: the long command is shortened from the middle', () => {
+  const cmd =
+    'cargo test -p looplint_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [
+      {
+        error: 'test result: FAILED. 3 passed; 1 failed',
+        command: cmd,
+        isTest: true,
+        source: 'claude',
+        firstSeen: '2026-10-20T17:00:00.000Z',
+        attempts: [],
+      },
+    ],
+    claimedDone: null,
+  };
+  const out = renderTerminal(f, null, { color: false, now: RAHUL_NOW });
+  const line = out.split('\n').find((l) => l.startsWith('  ✗')) as string;
+  expect([...line].length).toBeLessThanOrEqual(100);
+  expect(line).toMatch(/^ {2}✗ `cargo test … .*star_import` — test result: FAILED/);
+  // The same for a contradiction: the command shrinks, "(still failing)" stays.
+  const claimedLine = renderTerminal(
+    {
+      ...f,
+      claimedDone: {
+        source: 'claude',
+        message: 'All tests pass.',
+        at: '2026-10-20T18:25:00.000Z',
+        contradictions: [`\`${cmd}\` — test result: FAILED. 3 passed; 1 failed (still failing)`],
+      },
+    },
+    null,
+    { color: false, now: RAHUL_NOW },
+  )
+    .split('\n')
+    .find((l) => l.startsWith('  ✗')) as string;
+  expect(claimedLine).toMatch(/` — test result: FAILED.*\(still failing\)$/);
+  expect([...claimedLine].length).toBeLessThanOrEqual(100);
+});

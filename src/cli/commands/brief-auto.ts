@@ -47,15 +47,17 @@ export interface BriefAutoDeps {
 
 export async function runBriefAuto(cwd: string, deps: BriefAutoDeps = {}): Promise<string> {
   const started = Date.now();
-  if (process.env.LEFTOFF_INTERNAL === '1' || quiet()) return '';
+  if (process.env.LEFTOFF_INTERNAL === '1') return '';
   try {
     const root = resolveProject(cwd);
     const config = loadConfig();
-    if (!config.autoBrief.enabled || skipped(root, config)) return '';
+    if (skipped(root, config)) return '';
     const now = deps.now ?? new Date();
     const db = openDb();
     try {
       const repo = createRepo(db);
+      // Quiet and disabled only stop the printing; the ingest keeps shell.log
+      // from piling up either way (owner decision after Task 14).
       maybeSpawnBackgroundIngest(repo, now, deps.spawnIngest ?? (() => spawnBackgroundIngest()));
       if (!isBriefDue(root, repo, config, now)) return '';
       const working = (deps.readWorking ?? readWorkingState)(root);

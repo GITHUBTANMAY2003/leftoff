@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Several tests have timing budgets (ingest) or start real shells and node
+    // processes; fewer workers keep them from starving each other (Task 15).
+    maxWorkers: 4,
     projects: [
       {
         test: {

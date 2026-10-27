@@ -6,12 +6,11 @@ import {
   type OpenProblem,
 } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
-import { fit, painter } from './terminal.ts';
+import { fit, fitProblemLine, painter } from './terminal.ts';
+import { plural } from './text.ts';
 
 // `leftoff` / `leftoff loops` (spec §1.8). Lines are cut to the terminal width
 // from the middle, so the counts at the end of a line always survive.
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // "1 test still failing", "2 problems still failing", "1 test and 1 other
 // problem still failing", then " · 3 uncommitted files" (owner decision, Task 11).
@@ -50,7 +49,7 @@ export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: bo
     }
     for (const o of item.openProblems) {
       const tail = o.attempts.length > 0 ? ` (${plural(o.attempts.length, 'attempt')})` : '';
-      out.push(`  ${p.red('✗')} ${fit(`  ✗ ${tail}`, problemText(o))}${p.dim(tail)}`);
+      out.push(`  ${p.red('✗')} ${fitProblemLine('  ✗ ', problemText(o), tail)}${p.dim(tail)}`);
     }
     if (item.uncommittedCount > 0)
       out.push(`  • ${plural(item.uncommittedCount, 'uncommitted file')}`);

@@ -55,7 +55,7 @@ __leftoff_auto() {
   local exit_code=$? project shim
   [ "$PWD" != "${__leftoff_auto_pwd:-}" ] || return $exit_code
   __leftoff_auto_pwd=$PWD
-  [ "${LEFTOFF_INTERNAL:-}" != 1 ] && [ -z "${LEFTOFF_QUIET:-}" ] || return $exit_code
+  [ "${LEFTOFF_INTERNAL:-}" != 1 ] || return $exit_code
   project=$(command git rev-parse --show-toplevel 2>/dev/null)
   [ -n "$project" ] || project=$PWD
   [ "$project" != "${__leftoff_auto_project:-}" ] || return $exit_code

@@ -242,4 +242,4 @@ The checks ran from a bash script with per-file backups, byte-compared after eac
 
 ## 10. Commit
 
-To be filled in by Task 15's commit (B11). The commit message is `feat: automatic brief on terminal open`.
+`48a70ae feat: automatic brief on terminal open` (hash filled in by Task 15's commit, B11).

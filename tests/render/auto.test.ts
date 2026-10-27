@@ -40,7 +40,7 @@ test('auto brief ≤ 8 lines with exact first and last lines, each line ≤ 100 
   );
   expect(lines.at(-1)).toBe('Run `leftoff resume` for details');
   expect(lines).toContain('  • 3 uncommitted files');
-  expect(lines.find((l) => l.startsWith('  ✗ `make step1`'))).toMatch(/… \(\+2 more\)$/);
+  expect(lines.find((l) => l.startsWith('  ✗ `make step1`'))).toMatch(/… \(\+2 more problems\)$/);
   expect(lines).toContain('  → Write the migration for reset tokens');
   for (const l of lines) expect([...l].length).toBeLessThanOrEqual(100);
 });
@@ -73,9 +73,29 @@ test('the problem shown is the one the next step verifies, and the next step is 
     nextStep: 'Verify: `make step2` still failing',
   };
   const lines = render(f).split('\n');
-  expect(lines).toContain('  ✗ `make step2` — boom (+1 more)');
+  expect(lines).toContain('  ✗ `make step2` — boom (+1 more problem)');
   expect(lines.join('\n')).not.toContain('Verify:');
   // A next step about something else stays.
   const other = render({ ...f, nextStep: 'Verify: 2 uncommitted files' }).split('\n');
   expect(other).toContain('  → Verify: 2 uncommitted files');
+});
+
+test('a long command is shortened from the middle so the error shows on the one problem line', () => {
+  const cmd =
+    'cargo test -p looplint_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [
+      { ...problem(1), command: cmd, error: 'test result: FAILED. 3 passed; 1 failed' },
+      problem(2),
+    ],
+    nextStep: null,
+  };
+  const line = render(f)
+    .split('\n')
+    .find((l) => l.startsWith('  ✗')) as string;
+  expect([...line].length).toBeLessThanOrEqual(100);
+  expect(line).toMatch(
+    /^ {2}✗ `cargo test … .*star_import` — test result: FAILED.*\(\+1 more problem\)$/,
+  );
 });

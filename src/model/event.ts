@@ -329,6 +329,34 @@ export function chainSteps(cmd: string): string[] {
   return steps.filter((step) => step !== '');
 }
 
+// The leading `cd` / `source` / `export` / `set` steps of a `&&` / `;` chain
+// removed; nothing but setup is left as it is.
+function withoutSetup(cmd: string): string {
+  const s = cmd.replace(/\s+/g, ' ').trim();
+  const tokens = tokenize(s);
+  let from = 0;
+  for (;;) {
+    const first = tokens[from];
+    if (!first || first.op || !SETUP_STEPS.has(first.text)) break;
+    const sep = tokens.findIndex((t, i) => i > from && t.op && (t.text === '&&' || t.text === ';'));
+    if (sep < 0 || sep === tokens.length - 1) break;
+    from = sep + 1;
+  }
+  const rest = tokens[from] as Token;
+  // Nothing but setup: left as it is.
+  if (from === 0 || (!rest.op && SETUP_STEPS.has(rest.text))) return s;
+  return s.slice(rest.start);
+}
+
+// How a command reads in a brief (owner decision after Task 14): the same
+// cleanup as the comparison, so setup prefixes (`source … &&`, `cd … &&`,
+// `export X=… &&`) and trailing filters (`| grep`, `| tail`, …) are gone.
+// `source "$HOME/.cargo/env" && cargo test -p x | grep FAIL` → `cargo test -p x`.
+export function displayCommand(cmd: string): string {
+  const n = normalizeCommand(cmd);
+  return withoutSetup(endsWithFilter(n) ? withoutFilters(n) : n);
+}
+
 // The first program of a pipeline (after cd steps and env prefixes), or null
 // when the command line has no unquoted `|`.
 export function pipelineHead(cmd: string): string | null {

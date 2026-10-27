@@ -149,3 +149,22 @@ test('with color, the text is the same once the ANSI codes are removed', () => {
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(colored.replace(/\x1b\[[0-9;]*m/g, '')).toBe(render(sample()));
 });
+
+test('a long command is shortened from the middle so the error stays on the line (owner decision after Task 14)', () => {
+  const cmd =
+    'cargo test -p looplint_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
+  const out = renderLooseEnds(
+    [
+      entry({
+        openProblems: [problem('test result: FAILED. 3 passed; 1 failed', cmd, true, ['a'])],
+      }),
+    ],
+    NOW,
+    { color: false },
+  );
+  const line = out.split('\n').find((l) => l.startsWith('  ✗')) as string;
+  expect([...line].length).toBeLessThanOrEqual(100);
+  expect(line).toContain('` — test result: FAILED');
+  expect(line).toMatch(/^ {2}✗ `cargo test … .*star_import` — /);
+  expect(line.endsWith('(1 attempt)')).toBe(true);
+});

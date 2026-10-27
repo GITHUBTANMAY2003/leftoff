@@ -32,7 +32,22 @@ export const PROBE_COMMANDS = [
   'git diff',
   'diff',
   'cmp',
+  // read-only look-around commands (owner decision after Task 14)
+  'sed -n', // -i writes, so only the printing form
+  'lsof',
+  'ps',
+  'pwd',
+  'echo',
+  'printenv',
+  'date',
+  'uname',
+  'whoami',
 ];
+
+// `env` alone only prints; with arguments it runs a command.
+// `<tool> --version`, `-V` and `--help` only print (a missing tool exits 127,
+// which is still a real problem).
+const INFO_FLAGS = new Set(['--version', '-V', '--help']);
 
 // Read-only agent tools. Codex (0.163) has none of its own: it reads and
 // searches through shell commands, which PROBE_COMMANDS covers.
@@ -47,6 +62,8 @@ const SEPARATOR = /\s*(?:&&|\|\||;|\|)\s*/;
 
 function isProbePart(part: string): boolean {
   const words = normalizeCommand(part).split(' ');
+  if (words.length === 1 && words[0] === 'env') return true;
+  if (words.slice(1, 3).some((w) => INFO_FLAGS.has(w))) return true;
   return PROBE_COMMANDS.some((probe) => {
     const p = probe.split(' ');
     return p.every((w, i) => words[i] === w);

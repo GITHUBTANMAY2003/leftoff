@@ -93,15 +93,26 @@ describe.each(SHELLS.map((shell) => [shell, cannotRun(shell)] as const))(
       expect(calls(r.stdout)).toEqual([`PATH brief --auto ${tmp}`]);
     });
 
-    run('LEFTOFF_QUIET set, or no leftoff at all: nothing runs, nothing printed', async () => {
-      fakeLeftoff(join(home, 'bin', 'leftoff'));
-      const quiet = await runInteractive(
-        shell,
-        session(shell, [`cd ${join(tmp, 'projA')}`]),
-        env({ LEFTOFF_QUIET: '1' }),
-      );
-      expect(calls(quiet.stdout)).toEqual([]);
-      rmSync(join(home, 'bin'), { recursive: true });
+    run(
+      'LEFTOFF_QUIET does not stop the call (the CLI only stays silent); LEFTOFF_INTERNAL does',
+      async () => {
+        fakeLeftoff(join(home, 'bin', 'leftoff'));
+        const quiet = await runInteractive(
+          shell,
+          session(shell, [`cd ${join(tmp, 'projA')}`]),
+          env({ LEFTOFF_QUIET: '1' }),
+        );
+        expect(calls(quiet.stdout)).toHaveLength(2); // first prompt, then projA
+        const internal = await runInteractive(
+          shell,
+          session(shell, [`cd ${join(tmp, 'projA')}`]),
+          env({ LEFTOFF_INTERNAL: '1' }),
+        );
+        expect(calls(internal.stdout)).toEqual([]);
+      },
+    );
+
+    run('no leftoff at all: nothing runs, nothing printed', async () => {
       const none = await runInteractive(shell, session(shell, [`cd ${join(tmp, 'projA')}`]), env());
       expect(calls(none.stdout)).toEqual([]);
       expect(none.stdout + none.stderr).not.toMatch(/not found|No such file|leftoff: /);

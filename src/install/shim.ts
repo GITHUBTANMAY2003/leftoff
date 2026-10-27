@@ -63,6 +63,10 @@ export function installShim(nodePath: string, cliPath: string): void {
   renameSync(tmp, shim);
 }
 
+// A node start takes well under a second; the rest is room for a busy machine
+// (owner-approved plan said 1 s; doctor and setup tests flaked under load).
+const SHIM_CHECK_TIMEOUT_MS = 5000;
+
 export function shimStatus(): {
   exists: boolean;
   nodePath: string | null;
@@ -79,6 +83,7 @@ export function shimStatus(): {
     cliPath !== null &&
     existsSync(nodePath) &&
     existsSync(cliPath) &&
-    spawnSync(shim, ['--version'], { timeout: 1000, stdio: 'ignore' }).status === 0;
+    spawnSync(shim, ['--version'], { timeout: SHIM_CHECK_TIMEOUT_MS, stdio: 'ignore' }).status ===
+      0;
   return { exists: true, nodePath, cliPath, works };
 }

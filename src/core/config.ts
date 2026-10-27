@@ -76,6 +76,8 @@ const FIELDS: Record<string, Kind> = {
   'looseEnds.maxProjects': INTEGER,
 };
 
+export const CONFIG_KEYS: readonly string[] = Object.keys(FIELDS);
+
 const SECTIONS = new Set(
   Object.keys(FIELDS)
     .filter((k) => k.includes('.'))
@@ -230,4 +232,30 @@ export function setConfigValue(key: string, raw: string): Config {
   setPath(config as unknown as Record<string, unknown>, key, value);
   saveConfig(config);
   return config;
+}
+
+// What loadConfig would drop from config.json, as short messages, for
+// `leftoff doctor` (loadConfig itself never throws and only logs).
+export function configProblems(): string[] {
+  const file = paths().config;
+  if (!existsSync(file)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return ['config.json is not valid JSON'];
+  }
+  if (!isPlainObject(parsed)) return ['config.json is not a JSON object'];
+  const problems: string[] = [];
+  const check = (key: string, value: unknown) => {
+    const kind = FIELDS[key];
+    if (!kind) problems.push(`unknown key "${key}"`);
+    else if (!isValid(kind, value)) problems.push(`invalid value for ${key}`);
+  };
+  for (const [top, value] of Object.entries(parsed)) {
+    if (!SECTIONS.has(top)) check(top, value);
+    else if (!isPlainObject(value)) problems.push(`invalid value for ${top}`);
+    else for (const [sub, subValue] of Object.entries(value)) check(`${top}.${sub}`, subValue);
+  }
+  return problems;
 }

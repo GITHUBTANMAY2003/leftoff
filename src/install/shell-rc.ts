@@ -4,6 +4,13 @@ import { ensureHome, paths } from '../core/paths.ts';
 
 export type ShellName = 'zsh' | 'bash' | 'fish';
 
+// Where each shell's interactive rc file lives under a home folder.
+export function rcPathFor(shell: ShellName, home: string): string {
+  return shell === 'fish'
+    ? join(home, '.config', 'fish', 'config.fish')
+    : join(home, shell === 'zsh' ? '.zshrc' : '.bashrc');
+}
+
 const SHELLS: ShellName[] = ['zsh', 'bash', 'fish'];
 const BEGIN = '# >>> leftoff >>>';
 const END = '# <<< leftoff <<<';
@@ -46,6 +53,11 @@ function block(shell: ShellName, scriptPath: string): string {
   // Guarded, so a missing script never prints an error in a new terminal (D10).
   const source = shell === 'fish' ? `test -r ${q}; and source ${q}` : `[ -r ${q} ] && . ${q}`;
   return `${BEGIN}\n${source}\n${END}\n`;
+}
+
+// Whether the leftoff block is in the rc file (doctor).
+export function hasShellHook(rcPath: string): boolean {
+  return existsSync(rcPath) && BLOCK.test(readFileSync(rcPath, 'utf8'));
 }
 
 // Writes in place (not temp file + rename) so an rc file that is a symlink into

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { dedupeKey, makeEvent, normalizeCommand } from '../../src/model/event.ts';
+import { dedupeKey, displayCommand, makeEvent, normalizeCommand } from '../../src/model/event.ts';
 
 const base = {
   source: 'shell' as const,
@@ -146,3 +146,32 @@ test.each([
 ])('normalizeCommand(%j) → %j', (input, expected) =>
   expect(normalizeCommand(input)).toBe(expected),
 );
+
+// How a command reads in a brief (owner decision after Task 14): the same
+// cleanup as the comparison — setup prefixes and trailing filters dropped.
+test.each([
+  [
+    'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^(error|warning)|panicked" -A6',
+    'cargo test -p looplint_adapters',
+  ],
+  [
+    'source "$HOME/.cargo/env" && cargo test -p looplint_adapters',
+    'cargo test -p looplint_adapters',
+  ],
+  ['export A=1 && cd x && make deploy', 'make deploy'],
+  ['source env.sh ; set -e ; cargo test', 'cargo test'],
+  ['. ./venv/bin/activate && pytest -x', 'pytest -x'],
+  [
+    'npx vitest run --project unit 2>&1 | grep -E "FAIL " | head -30',
+    'npx vitest run --project unit',
+  ],
+  ['CI=1 npm test 2>&1 | tail -5', 'npm test'],
+  // Real steps stay: a chain of several commands is shown whole.
+  ['git status && git diff --stat | sed -n 1,5p', 'git status && git diff --stat | sed -n 1,5p'],
+  ['npm run build; npm test', 'npm run build; npm test'],
+  // Nothing but setup is left as it is.
+  ['source env.sh && export A=1', 'source env.sh && export A=1'],
+  ['cat a.ts | grep x', 'cat a.ts'],
+])('displayCommand(%j) → %j', (command, expected) => {
+  expect(displayCommand(command)).toBe(expected);
+});

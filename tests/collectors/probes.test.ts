@@ -38,6 +38,22 @@ test.each([
   ['rg TODO | head -20', 1],
   ['cd src && ls missing', 1],
   ['LC_ALL=C grep -c x file', 1],
+  // read-only look-around commands (owner decision after Task 14)
+  ["sed -n '1,5p' missing.txt", 1],
+  ['lsof -i :3000', 1],
+  ['ps -p 99999', 1],
+  ['pwd', 1],
+  ['echo hello', 1],
+  ['printenv NOT_SET', 1],
+  ['env', 1], // no arguments
+  ['date', 1],
+  ['uname -a', 1],
+  ['whoami', 1],
+  ['node --version', 1],
+  ['cargo -V', 1],
+  ['git commit --help', 1],
+  ['pnpm --version && node --version', 1],
+  ['ls -ld x && lsof -i :1', 1],
 ])('%j exiting %i is a probe failure', (command, exitCode) => {
   expect(isProbeFailure(command, exitCode, '')).toBe(true);
 });
@@ -51,7 +67,10 @@ test.each([
   ['ls && npm run build', 1], // one part isn't a probe
   ['git commit -m wip', 1], // git, but not a read-only subcommand
   ['catalog-tool list', 1], // "cat" only as a whole word
-  ['lsof -i :3000', 1],
+  ['sed -i s/a/b/ file.txt', 1], // sed -n only: -i writes
+  ['env FOO=1 make', 1], // env with arguments runs a command
+  ['npm test --silent', 1],
+  ['node --version', 127], // not installed: a real problem
 ])('%j exiting %i still counts', (command, exitCode) => {
   expect(isProbeFailure(command, exitCode, '')).toBe(false);
 });

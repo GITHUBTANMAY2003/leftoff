@@ -16,6 +16,9 @@ export interface Repo {
   eventsSince(sinceIso: string): WorkEvent[];
   projects(): { root: string; lastTs: string; count: number }[];
   lastActivity(root: string): string | null;
+  // The newest event matching a source and/or kind; null if none (doctor).
+  lastEventTs(filter: { source?: Source; kind?: EventKind }): string | null;
+  countEvents(root?: string): number;
   getCursor(collector: string, key: string): string | null;
   setCursor(collector: string, key: string, value: string): void;
   saveBrief(
@@ -121,6 +124,17 @@ export function createRepo(db: Database): Repo {
   const lastActivity = db.prepare<[string], { ts: string | null }>(
     'SELECT MAX(ts) AS ts FROM events WHERE project_root = ?',
   );
+  const lastEventTs = db.prepare<
+    { source: string | null; kind: string | null },
+    { ts: string | null }
+  >(
+    `SELECT MAX(ts) AS ts FROM events
+     WHERE (@source IS NULL OR source = @source) AND (@kind IS NULL OR kind = @kind)`,
+  );
+  const countAll = db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM events');
+  const countProject = db.prepare<[string], { n: number }>(
+    'SELECT COUNT(*) AS n FROM events WHERE project_root = ?',
+  );
   const getCursor = db.prepare<[string, string], { value: string }>(
     'SELECT value FROM cursors WHERE collector = ? AND key = ?',
   );
@@ -170,6 +184,9 @@ export function createRepo(db: Database): Repo {
     eventsSince: (sinceIso) => toEvents(since.all(sinceIso)),
     projects: () => projects.all(),
     lastActivity: (root) => lastActivity.get(root)?.ts ?? null,
+    lastEventTs: (filter) =>
+      lastEventTs.get({ source: filter.source ?? null, kind: filter.kind ?? null })?.ts ?? null,
+    countEvents: (root) => (root === undefined ? countAll.get() : countProject.get(root))?.n ?? 0,
     getCursor: (collector, key) => getCursor.get(collector, key)?.value ?? null,
     setCursor: (collector, key, value) => {
       setCursor.run(collector, key, value, now());

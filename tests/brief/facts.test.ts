@@ -255,6 +255,21 @@ test('claimed done quotes the sentence with the done-word, cut at word boundarie
   expect(quoted).toMatch(/^…(\w+ )+.*done.*( \w+)+…$/);
 });
 
+test('an open problem shows its command without setup prefixes and trailing filters (owner decision after Task 14)', () => {
+  const [p] = findOpenProblems(
+    timeline(
+      fail(
+        'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^error" -A6',
+        'test result: FAILED',
+      ),
+    ),
+  );
+  expect(p?.command).toBe('cargo test -p looplint_adapters');
+  expect(problemText(p as OpenProblem)).toBe(
+    '`cargo test -p looplint_adapters` — test result: FAILED',
+  );
+});
+
 test('questions and offers are never done-claims; a claim sentence elsewhere in the message still counts', () => {
   const claim = (message: string) =>
     detectClaimedDone(

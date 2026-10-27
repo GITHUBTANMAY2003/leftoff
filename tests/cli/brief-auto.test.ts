@@ -126,6 +126,31 @@ test('not due when LEFTOFF_QUIET=1 or autoBrief.enabled=false', async () => {
   expect(withRepo((repo) => isBriefDue(project, repo, gap, NOW))).toBe(false);
 });
 
+test('quiet and disabled only stop the printing: the background ingest still starts (owner decision after Task 14)', async () => {
+  seed(5);
+  spawned.length = 0;
+  process.env.LEFTOFF_QUIET = '1';
+  expect(await runBriefAuto(project, deps())).toBe('');
+  expect(spawned).toEqual(['ingest']);
+  delete process.env.LEFTOFF_QUIET;
+  // The quiet run did not use up the brief: it is still due afterwards.
+  withRepo((repo) => repo.setCursor('ingest', 'last_bg', '2000-01-01T00:00:00.000Z'));
+  const off = config();
+  off.autoBrief.enabled = false;
+  saveConfig(off);
+  expect(await runBriefAuto(project, deps())).toBe('');
+  expect(spawned).toEqual(['ingest', 'ingest']);
+  saveConfig(config());
+  expect(await runBriefAuto(project, deps())).not.toBe('');
+});
+
+test('LEFTOFF_INTERNAL=1 starts no ingest either', async () => {
+  spawned.length = 0;
+  process.env.LEFTOFF_INTERNAL = '1';
+  await runBriefAuto(project, deps());
+  expect(spawned).toEqual([]);
+});
+
 test('runBriefAuto returns "" when over budget, and the brief stays due', async () => {
   seed(5);
   const slowGit = () => {
@@ -161,9 +186,10 @@ test('`leftoff brief --auto` prints nothing without activity, exits 0, and is hi
   const run = (args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], {
       cwd: project,
-      env: { ...process.env, LEFTOFF_QUIET: '1' }, // no background ingest from a test
+      env: process.env,
       encoding: 'utf8',
     });
+  withRepo((repo) => repo.setCursor('ingest', 'last_bg', new Date().toISOString())); // no background ingest from a test
   const r = run(['brief', '--auto']);
   expect([r.status, r.stdout, r.stderr]).toEqual([0, '', '']);
   expect(run(['--help']).stdout).not.toMatch(/\bbrief\b/);

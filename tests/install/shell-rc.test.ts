@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { paths } from '../../src/core/paths.ts';
 import {
+  hasShellHook,
   installedShellScriptVersion,
   installShellHook,
   installShellScripts,
@@ -157,3 +158,13 @@ test.skipIf(!hasShell('zsh'))(
     expect(readFileSync(log, 'utf8')).toMatch(/\t0\t\d+\t\d+\t.*\techo e2e\n$/);
   },
 );
+
+test('hasShellHook is true only while the leftoff block is in the rc file', () => {
+  expect(hasShellHook(rc)).toBe(false); // no file
+  writeFileSync(rc, 'export A=1\n');
+  expect(hasShellHook(rc)).toBe(false);
+  installShellHook('zsh', rc, join(paths().shellDir, 'leftoff.zsh'));
+  expect(hasShellHook(rc)).toBe(true);
+  removeShellHook(rc);
+  expect(hasShellHook(rc)).toBe(false);
+});

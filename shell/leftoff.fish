@@ -45,7 +45,6 @@ if status is-interactive
         test "$PWD" = "$__leftoff_auto_pwd"; and return 0
         set -g __leftoff_auto_pwd $PWD
         test "$LEFTOFF_INTERNAL" = 1; and return 0
-        test -n "$LEFTOFF_QUIET"; and return 0
         set -l project (command git rev-parse --show-toplevel 2>/dev/null)
         test -n "$project"; or set project $PWD
         test "$project" = "$__leftoff_auto_project"; and return 0

@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import {
+  CONFIG_KEYS,
+  configProblems,
   DEFAULT_CONFIG,
   getConfigValue,
   loadConfig,
@@ -168,4 +170,27 @@ test('saveConfig writes JSON with mode 0600', () => {
   saveConfig({ ...loadConfig(), retentionDays: 7 });
   expect(statSync(paths().config).mode & 0o777).toBe(0o600);
   expect(JSON.parse(readFileSync(paths().config, 'utf8')).retentionDays).toBe(7);
+});
+
+test('configProblems lists what loadConfig would drop, and is empty for a good file', () => {
+  expect(configProblems()).toEqual([]);
+  writeFileSync(
+    paths().config,
+    JSON.stringify({ retentionDays: 'many', nope: 1, autoBrief: { gapHours: 6, extra: true } }),
+  );
+  expect(configProblems()).toEqual([
+    'invalid value for retentionDays',
+    'unknown key "nope"',
+    'unknown key "autoBrief.extra"',
+  ]);
+  writeFileSync(paths().config, '{ broken');
+  expect(configProblems()).toEqual(['config.json is not valid JSON']);
+  writeFileSync(paths().config, '[1]');
+  expect(configProblems()).toEqual(['config.json is not a JSON object']);
+});
+
+test('CONFIG_KEYS lists every settable key', () => {
+  expect(CONFIG_KEYS).toContain('autoBrief.gapHours');
+  expect(CONFIG_KEYS).toContain('polish.provider');
+  expect(CONFIG_KEYS).not.toContain('autoBrief');
 });

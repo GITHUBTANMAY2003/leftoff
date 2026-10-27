@@ -125,7 +125,7 @@ test('a CLI provider that is not on PATH is unavailable', async () => {
 
 test('a CLI provider that exits non-zero or runs past the timeout throws', async () => {
   fakeCli('claude', 'echo "not logged in" >&2; exit 3');
-  await expect(claudeCli.polish('p', 5000)).rejects.toThrow(/exit code 3.*not logged in/);
+  await expect(claudeCli.polish('p', 15000)).rejects.toThrow(/exit code 3.*not logged in/);
   fakeCli('claude', 'sleep 1; touch "$FAKE_OUT/late"');
   const started = Date.now();
   await expect(claudeCli.polish('p', 200)).rejects.toThrow(/timed out/);

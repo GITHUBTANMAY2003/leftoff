@@ -8,6 +8,7 @@ import { isFilteredExit } from '../collectors/test-failures.ts';
 import {
   commandFiles,
   commandKey,
+  displayCommand,
   normalizeCommand,
   withoutFilters,
   type Source,
@@ -37,7 +38,7 @@ export interface BriefFacts {
 }
 export interface OpenProblem {
   error: string;
-  command: string | null; // normalized; shown before the error (owner decision after Task 10)
+  command: string | null; // shown before the error, without setup prefixes and filters (owner decisions after Tasks 10 and 14)
   isTest: boolean; // one of its failures is a failed test run (loose ends count tests)
   source: Source;
   firstSeen: string;
@@ -239,7 +240,8 @@ export function findOpenProblems(events: WorkEvent[]): OpenProblem[] {
         latest: newest.ts,
         problem: {
           error: errorOf(group.failures),
-          command: commandOf(newest),
+          command:
+            rawCommand(newest) !== null ? displayCommand(rawCommand(newest) as string) : null,
           isTest: group.failures.some((f) => f.kind === 'test_failed'),
           source: newest.source,
           firstSeen: (group.failures[0] as WorkEvent).ts,

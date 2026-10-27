@@ -115,3 +115,73 @@ test('short lists that fit still show at most 5 items, then "+N more"', () => {
     '',
   ]);
 });
+
+test('every output shows the cleaned command: no setup prefix, no trailing filter (owner decision after Task 14)', async () => {
+  const { makeEvent } = await import('../../src/model/event.ts');
+  const { buildFacts } = await import('../../src/brief/facts.ts');
+  const { DEFAULT_CONFIG } = await import('../../src/core/config.ts');
+  const { renderTerminal } = await import('../../src/render/terminal.ts');
+  const { renderAutoBrief } = await import('../../src/render/auto.ts');
+  const { renderLooseEnds } = await import('../../src/render/loose-ends.ts');
+  const { openDb } = await import('../../src/store/db.ts');
+  const { createRepo } = await import('../../src/store/repo.ts');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'leftoff-clean-'));
+  const db = openDb(join(dir, 'x.db'));
+  try {
+    const repo = createRepo(db);
+    const command =
+      'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^error" -A6';
+    repo.insertEvents([
+      makeEvent({
+        source: 'shell',
+        kind: 'command_failed',
+        projectRoot: '/p/app',
+        ts: new Date(RAHUL_NOW.getTime() - 3_600_000).toISOString(),
+        sessionRef: null,
+        summary: `\`${command}\` exited 101`,
+        data: { command, exitCode: 101, error: 'test result: FAILED' },
+        dedupeKey: 'clean-1',
+      }),
+    ]);
+    const f = buildFacts('/p/app', {
+      repo,
+      config: structuredClone(DEFAULT_CONFIG) as never,
+      report: null,
+      working: null,
+      now: RAHUL_NOW,
+    });
+    const want = '`cargo test -p looplint_adapters` — test result: FAILED';
+    const outputs = [
+      renderTerminal(f, null, { color: false, now: RAHUL_NOW }),
+      renderAutoBrief(f, { color: false, now: RAHUL_NOW }),
+      renderLooseEnds(
+        [
+          {
+            project: f.project,
+            branch: null,
+            lastActiveAt: f.lastActiveAt as string,
+            stale: false,
+            claimedDone: null,
+            openProblems: f.openProblems,
+            uncommittedCount: 0,
+            gitUnavailable: false,
+          },
+        ],
+        RAHUL_NOW,
+        { color: false },
+      ),
+      renderAgentContext(f, null, { now: RAHUL_NOW }),
+    ];
+    for (const out of outputs) {
+      expect(out).toContain(want);
+      expect(out).not.toContain('source "$HOME');
+      expect(out).not.toContain('grep -E');
+    }
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

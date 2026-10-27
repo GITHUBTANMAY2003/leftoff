@@ -1,7 +1,7 @@
 import { problemText, type BriefFacts } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
 import { splitProblems } from './problems.ts';
-import { capItems, clip } from './text.ts';
+import { capItems, clip, clipMiddle } from './text.ts';
 
 // The terminal brief (spec §1.8; the §1.1 example is the exact reference).
 // Headings in this order; empty sections omitted; no footer after Sources.
@@ -24,6 +24,28 @@ export function fitKeepingTail(prefix: string, text: string, tail: string): stri
 }
 
 const STILL_FAILING = ' (still failing)';
+
+// A problem line is "`command` — error". When it is too long the command is
+// shortened from the middle, so the error stays visible (owner decision after
+// Task 14); text that isn't in that form is cut at the end. `tail` is an
+// ending that follows the result (its width is reserved, it is not added).
+const PROBLEM_LINE = /^`(.*?)` — ([\s\S]*)$/;
+const MIN_ERROR_CHARS = 40;
+const MIN_COMMAND_CHARS = 20;
+export function fitProblemLine(prefix: string, text: string, tail = ''): string {
+  const m = PROBLEM_LINE.exec(text);
+  if (!m) return fit(prefix + tail, text);
+  const [command, error] = [m[1] as string, m[2] as string];
+  const room = LINE_WIDTH - [...(prefix + tail)].length - 5; // two backticks and " — "
+  const [commandLen, errorLen] = [[...command].length, [...error].length];
+  if (commandLen + errorLen <= room) return text;
+  const shownCommand = clipMiddle(
+    command,
+    Math.max(room - Math.min(errorLen, MIN_ERROR_CHARS), MIN_COMMAND_CHARS),
+  );
+  const shownError = clip(error, Math.max(room - [...shownCommand].length, 1));
+  return `\`${shownCommand}\` — ${shownError}`;
+}
 
 const STATUS_MARK = { ok: '✓', not_found: '–', error: '!' } as const;
 
@@ -86,8 +108,9 @@ export function renderTerminal(
   const problem = (text: string, attempts: string[]) => [
     `  ${p.red('✗')} ${
       text.endsWith(STILL_FAILING)
-        ? fitKeepingTail('  ✗ ', text.slice(0, -STILL_FAILING.length), STILL_FAILING)
-        : fit('  ✗ ', text)
+        ? fitProblemLine('  ✗ ', text.slice(0, -STILL_FAILING.length), STILL_FAILING) +
+          STILL_FAILING
+        : fitProblemLine('  ✗ ', text)
     }`,
     ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
   ];

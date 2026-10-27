@@ -1,5 +1,5 @@
 import { problemText, type BriefFacts } from '../brief/facts.ts';
-import { fit, fitKeepingTail, header, painter } from './terminal.ts';
+import { fit, fitProblemLine, header, painter } from './terminal.ts';
 
 // The automatic brief on terminal open (spec §1.8): the header, then at most
 // the uncommitted-file count, the top open problem and the next step, then
@@ -18,8 +18,8 @@ export function renderAutoBrief(f: BriefFacts, opts: { color: boolean; now?: Dat
   const top = f.openProblems.find((p) => p.command === verified) ?? f.openProblems[0];
   if (top) {
     const rest = f.openProblems.length - 1;
-    const more = rest > 0 ? ` (+${rest} more)` : '';
-    lines.push(`${INDENT}✗ ${fitKeepingTail(`${INDENT}✗ `, problemText(top), more)}`);
+    const more = rest > 0 ? ` (+${rest} more problem${rest === 1 ? '' : 's'})` : '';
+    lines.push(`${INDENT}✗ ${fitProblemLine(`${INDENT}✗ `, problemText(top), more)}${more}`);
   }
   // A next step that resolves or verifies that problem would only repeat it.
   const repeats =
