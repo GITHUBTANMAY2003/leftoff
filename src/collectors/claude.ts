@@ -6,6 +6,7 @@ import { dedupeKey, makeEvent, type EventKind, type WorkEvent } from '../model/e
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom } from './jsonl-reader.ts';
+import { looksLikeTestFailure } from './test-failures.ts';
 import type { CollectContext, CollectResult, Collector } from './types.ts';
 
 // Claude Code collector (plan Task 6). Reads session transcripts incrementally.
@@ -20,7 +21,6 @@ const MAX_PENDING_TOOL_USES = 500;
 const MAX_ERROR_CHARS = 1000;
 const AGENT_MESSAGE_CHARS = 300;
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const TEST_FAILURE = /\b(\d+ (failed|failing)|FAIL\b|AssertionError|Tests?:\s+\d+ failed)/;
 const NOT_A_PROMPT = /^<(command-|local-command|system-reminder)/;
 
 // $CLAUDE_CONFIG_DIR if set, else ~/.claude (R-C6).
@@ -91,7 +91,7 @@ function resultDrafts(
         data: { command, exitCode, error: error.slice(0, MAX_ERROR_CHARS) },
       },
     ];
-    if (TEST_FAILURE.test(output)) {
+    if (looksLikeTestFailure(output)) {
       drafts.push({
         kind: 'test_failed',
         summary: `Tests failed: \`${command}\``,

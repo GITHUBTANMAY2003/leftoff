@@ -13,8 +13,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 | 3 | Event model, redaction, project resolution ([report](reports/task-03.md)) | done | `017b1d1` | `pass`/`auth` match only as name segments (avoids redacting `--author`, `passport`) — confirmed by owner; `redactDeep` also redacts values under secret-named keys. Fold-ins: unreadable event rows skipped; plan text lines |
 | 4 | Shell hook scripts and shell collector ([report](reports/task-04.md)) | done | `8476acf` | One JSON-map cursor row instead of one per `*.ingesting` file (approved); bash duration `-1` on all versions (approved); rotated name `shell.log.<ms>.<pid>.ingesting`; abandoned partial lines dropped after 60 s instead of appended back. CI was red: fish tests needed a pty (fixed in Task 5). Fold-ins: mysql/sshpass redaction; plan text |
 | 5 | Git collector ([report](reports/task-05.md)) | done | `166ee39` | Git cursor is JSON `{ commit, reflogAt, reflogKeys }`; `<cursor>..HEAD` bounded by `retentionDays`; `git diff --shortstat HEAD`; no `symbolic-ref` call. Also: fish tests run under a pty (`script`); redaction fix for in-word `-name` "flags" (found by the §1.1 names) |
-| 6 | Incremental JSONL reader and Claude Code collector ([report](reports/task-06.md)) | done | (filled in by Task 7) | Claude cursor JSON `{ offset, toolUses }` plus a `__scan` cursor; tool events emitted at result time; `test_failed` only for failed results; no session_start/end from transcripts (hooks do it). Fold-ins: only your own commits (author email per repo, no merges); shared ignore module |
-| 7 | Codex CLI collector | not started | | |
+| 6 | Incremental JSONL reader and Claude Code collector ([report](reports/task-06.md)) | done | `620bb27` | Claude cursor JSON `{ offset, toolUses }` plus a `__scan` cursor; tool events emitted at result time; `test_failed` only for failed results; no session_start/end from transcripts (hooks do it). Fold-ins: only your own commits (author email per repo, no merges); shared ignore module |
+| 7 | Codex CLI collector ([report](reports/task-07.md)) | done | (filled in by Task 8) | Events only from `item_completed` (response_items repeat them); `parseCodexRecord(rec, state)`; dedupe key `(thread_id, ordinal)` so .jsonl→.zst adds no rows; JSON cursors; `engines >=22.15` (zstd exists). Fold-in: shared test-failure patterns |
 | 8 | Ingest orchestrator | not started | | |
 | 9 | Work sessions and brief facts | not started | | |
 | 10 | Renderers, `resume` and `note` commands | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 7: Codex CLI collector.** Needs a real Codex session from the owner.
+**Task 8: Ingest orchestrator.**

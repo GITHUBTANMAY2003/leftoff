@@ -391,4 +391,31 @@ All matched files use Prettier code style!
 
 ## 10. Commit
 
-Not committed yet (waiting for your fixture approval). When approved: message `feat(claude): incremental jsonl reader and claude code collector`; the hash will be backfilled in Task 7's commit.
+Commit `620bb27`, message `feat(claude): incremental jsonl reader and claude code collector`. The owner reviewed and approved the fixture before the commit.
+
+```
+$ git show --stat --format='%h %s' 620bb27
+620bb27 feat(claude): incremental jsonl reader and claude code collector
+
+ docs/PROGRESS.md                              |   6 +-
+ docs/leftoff-implementation-plan.md           |   2 +
+ docs/reports/task-05.md                       |  23 +-
+ docs/reports/task-06.md                       | 394 ++++++++++++++++++++++++++
+ src/collectors/claude.ts                      | 263 +++++++++++++++++
+ src/collectors/git.ts                         |  33 ++-
+ src/collectors/ignore.ts                      |  56 ++++
+ src/collectors/jsonl-reader.ts                |  67 +++++
+ src/collectors/shell.ts                       |  55 +---
+ tests/collectors/claude.test.ts               | 378 ++++++++++++++++++++++++
+ tests/collectors/git.test.ts                  |  71 ++++-
+ tests/collectors/ignore.test.ts               |  43 +++
+ tests/collectors/jsonl-reader.test.ts         | 123 ++++++++
+ tests/fixtures/claude/README.md               |  68 +++++
+ tests/fixtures/claude/session-basic.jsonl     |  95 +++++++
+ tests/fixtures/claude/session-malformed.jsonl |  99 +++++++
+ tests/fixtures/claude/session-partial.jsonl   |  95 +++++++
+ tests/helpers/git.ts                          |  13 +-
+ 18 files changed, 1825 insertions(+), 59 deletions(-)
+```
+
+Owner's answer to §8.2: extend the test-failure patterns (Node/TAP, Go, cargo, pytest/jest/vitest) in one place, with zero cases tested. Done in Task 7.

@@ -376,3 +376,16 @@ test('api-request-blob copies are never read as work, even with cwd and timestam
   const events = (await collect()).events;
   expect(events.map((e) => [e.kind, e.data.command])).toEqual([['tool_error', undefined]]);
 });
+
+test('test_failed uses the shared patterns: a failing node run without an AssertionError', async () => {
+  writeFileSync(
+    join(projectDir, 'timeout.jsonl'),
+    toolUse('toolu_t', 'Bash', { command: 'node --test' }) +
+      toolResult(
+        'toolu_t',
+        "Exit code 1\n✖ slow (5000ms)\n  'test timed out after 5000ms'\nℹ fail 1",
+        true,
+      ),
+  );
+  expect((await collect()).events.map((e) => e.kind)).toEqual(['command_failed', 'test_failed']);
+});

@@ -1,4 +1,7 @@
+import { createReadStream } from 'node:fs';
 import { open } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
+import { createZstdDecompress } from 'node:zlib';
 
 // Incremental reading of append-only JSONL logs (agent transcripts, plan §1.6):
 // only complete lines are returned, the offset never moves past a partial last
@@ -64,4 +67,28 @@ export async function readJsonlFrom(
   } finally {
     await handle.close();
   }
+}
+
+// Compressed sessions (Codex rewrites older rollouts as .jsonl.zst). The file
+// is complete, so it is streamed in full; the first `skipLines` lines were
+// read before. Uses node:zlib's zstd (Node ≥ 22.15), no extra dependency.
+export async function readZstJsonl(
+  file: string,
+  skipLines: number,
+): Promise<{ records: unknown[]; totalLines: number; malformed: number }> {
+  const result = { records: [] as unknown[], totalLines: 0, malformed: 0 };
+  const lines = createInterface({
+    input: createReadStream(file).pipe(createZstdDecompress()),
+    crlfDelay: Infinity,
+  });
+  for await (const line of lines) {
+    result.totalLines++;
+    if (result.totalLines <= skipLines || line.trim() === '') continue;
+    try {
+      result.records.push(JSON.parse(line) as unknown);
+    } catch {
+      result.malformed++;
+    }
+  }
+  return result;
 }

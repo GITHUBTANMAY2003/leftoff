@@ -10,7 +10,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
-import { readJsonlFrom } from '../../src/collectors/jsonl-reader.ts';
+import { zstdCompressSync } from 'node:zlib';
+import { readJsonlFrom, readZstJsonl } from '../../src/collectors/jsonl-reader.ts';
 
 let dir: string;
 let file: string;
@@ -121,3 +122,16 @@ test.skipIf(process.env.CI_FAST)(
   },
   30_000,
 );
+
+test('readZstJsonl reads every line of a zstd file and skips the first N', async () => {
+  const lines = [1, 2, 3].map((n) => line({ n }));
+  const zst = join(dir, 'session.jsonl.zst');
+  writeFileSync(zst, zstdCompressSync(Buffer.from(lines.join('') + '{bad\n' + line({ n: 4 }))));
+  const all = await readZstJsonl(zst, 0);
+  expect(all.records).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }, { n: 4 }]);
+  expect(all.totalLines).toBe(5);
+  expect(all.malformed).toBe(1);
+  const rest = await readZstJsonl(zst, 3);
+  expect(rest.records).toEqual([{ n: 4 }]);
+  expect(rest.totalLines).toBe(5);
+});
