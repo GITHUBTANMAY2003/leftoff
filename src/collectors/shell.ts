@@ -13,6 +13,7 @@ import { paths } from '../core/paths.ts';
 import { dedupeKey, makeEvent, type WorkEvent } from '../model/event.ts';
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
+import { isProbeFailure } from './probes.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Reads the lines the shell hooks append to shell.log (plan Task 4):
@@ -70,7 +71,14 @@ function toEvent(raw: string, p: ParsedLine): WorkEvent {
     ts: new Date(p.tsMs).toISOString(),
     sessionRef: `shell:${p.pid}`,
     summary: failed ? `\`${p.command}\` exited ${p.exitCode}` : p.command,
-    data: { command: p.command, exitCode: p.exitCode, durationMs: p.durationMs, cwd: p.cwd },
+    data: {
+      command: p.command,
+      exitCode: p.exitCode,
+      durationMs: p.durationMs,
+      cwd: p.cwd,
+      // The shell log has no output, so only the exit code decides.
+      ...(failed && isProbeFailure(p.command, p.exitCode, '') ? { probe: true } : {}),
+    },
     // The line itself: stable however often the file is renamed or re-read.
     dedupeKey: dedupeKey('shell', raw),
   });

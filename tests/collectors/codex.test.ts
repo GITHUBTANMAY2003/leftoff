@@ -448,3 +448,17 @@ test('soft deadline rotates between sessions: an always-growing session does not
   }
   expect(seen).toEqual(new Set(['active', 'backlog']));
 });
+
+test('probe failures are marked: ls /nope and the empty rg; the test run, lint and the interrupted npx are not', async () => {
+  install('session-basic.jsonl');
+  const failures = (await collect()).events
+    .filter((e) => e.kind === 'command_failed')
+    .map((e) => [e.data.command, e.data.probe === true]);
+  expect(failures).toEqual([
+    ['ls /nope', true],
+    ["rg --files -g 'notes.md' -g 'NOTES.md' -g 'Notes.md'", true],
+    ['node --test', false],
+    ['npm run lint', false],
+    ['npx --no-install eslint .', false], // exit 130: interrupted, a real failure
+  ]);
+});

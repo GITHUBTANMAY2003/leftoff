@@ -7,6 +7,7 @@ import { dedupeKey, makeEvent, type EventKind, type WorkEvent } from '../model/e
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom, readZstJsonl } from './jsonl-reader.ts';
+import { isProbeFailure } from './probes.ts';
 import { looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
@@ -112,7 +113,12 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
         {
           kind: 'command_failed',
           summary: `\`${command}\` failed: ${firstLine(output) || `exit code ${exitCode}`}`,
-          data: { command, exitCode, error: output.trim().slice(0, MAX_ERROR_CHARS) },
+          data: {
+            command,
+            exitCode,
+            error: output.trim().slice(0, MAX_ERROR_CHARS),
+            ...(isProbeFailure(command, exitCode, output) ? { probe: true } : {}),
+          },
         },
       ];
       if (looksLikeTestFailure(output)) {

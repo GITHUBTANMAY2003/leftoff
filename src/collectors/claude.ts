@@ -6,6 +6,7 @@ import { dedupeKey, makeEvent, type EventKind, type WorkEvent } from '../model/e
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom } from './jsonl-reader.ts';
+import { isProbeFailure, isReadOnlyTool } from './probes.ts';
 import { looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
@@ -89,7 +90,12 @@ function resultDrafts(
       {
         kind: 'command_failed',
         summary: `\`${command}\` failed: ${firstLine(error)}`,
-        data: { command, exitCode, error: error.slice(0, MAX_ERROR_CHARS) },
+        data: {
+          command,
+          exitCode,
+          error: error.slice(0, MAX_ERROR_CHARS),
+          ...(isProbeFailure(command, exitCode, output) ? { probe: true } : {}),
+        },
       },
     ];
     if (looksLikeTestFailure(output)) {
@@ -117,7 +123,11 @@ function resultDrafts(
     {
       kind: 'tool_error',
       summary: `${name} failed: ${firstLine(output)}`,
-      data: { tool: tool?.name ?? null, error: output.slice(0, MAX_ERROR_CHARS) },
+      data: {
+        tool: tool?.name ?? null,
+        error: output.slice(0, MAX_ERROR_CHARS),
+        ...(isReadOnlyTool(tool?.name) ? { probe: true } : {}),
+      },
     },
   ];
 }

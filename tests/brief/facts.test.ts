@@ -396,3 +396,21 @@ test('factsHash ignores lastActiveAt', () => {
   expect(factsHash({ ...f, nextStep: 'something else' })).not.toBe(factsHash(f));
   expect(factsHash(f)).toMatch(/^[0-9a-f]{40}$/);
 });
+
+test('probe failures are not open problems and do not contradict a claim, but stay in the events', () => {
+  const events = timeline(
+    [
+      'command_failed',
+      '`ls /nope` failed: no such file',
+      { command: 'ls /nope', exitCode: 1, error: 'no such file', probe: true },
+    ],
+    [
+      'tool_error',
+      'Read failed: File does not exist.',
+      { tool: 'Read', error: 'File does not exist.', probe: true },
+    ],
+    ['agent_message', 'All done.'],
+  );
+  expect(findOpenProblems(events)).toEqual([]);
+  expect(detectClaimedDone(events, findOpenProblems(events), 0)).toBeNull();
+});

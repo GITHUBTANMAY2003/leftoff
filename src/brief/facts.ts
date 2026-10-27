@@ -92,6 +92,7 @@ function problemGroups(events: WorkEvent[]): Map<string, ProblemGroup> {
   const groups = new Map<string, ProblemGroup>();
   events.forEach((e, index) => {
     const command = commandOf(e);
+    if (FAILURES.has(e.kind) && e.data.probe === true) return; // stored, but not a loose end
     if (FAILURES.has(e.kind)) {
       const key =
         command !== null ? `cmd:${command}` : `${e.kind}:${String(e.data.tool)}:${e.summary}`;

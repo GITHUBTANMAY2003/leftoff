@@ -329,3 +329,15 @@ test('soft deadline: an unreached file that was partly read keeps its committed 
   expect(r2.warnings).toEqual([expect.stringMatching(/^malformed:1:.*shell\.log\.2\.2/)]);
   expect(r2.events).toEqual([]);
 });
+
+test('a probe failing with exit 1 is marked; the same probe with exit 127 is not', async () => {
+  writeFileSync(
+    log(),
+    line('ls /nope', { exit: 1 }) + line('ls /nope', { exit: 127, ts: 1729764001000 }),
+  );
+  const events = (await shellCollector.collect(ctx)).events;
+  expect(events.map((e) => [e.data.exitCode, e.data.probe === true])).toEqual([
+    [1, true],
+    [127, false],
+  ]);
+});

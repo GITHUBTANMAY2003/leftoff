@@ -14,6 +14,7 @@ export const RAHUL_NOW = new Date('2026-10-21T08:30:00.000Z');
 const SEND = 'python scripts/send_test_email.py';
 
 let seq = 0;
+let root = RAHUL_ROOT;
 function ev(
   source: Source,
   kind: EventKind,
@@ -24,7 +25,7 @@ function ev(
   return makeEvent({
     source,
     kind,
-    projectRoot: RAHUL_ROOT,
+    projectRoot: root,
     ts,
     sessionRef: source === 'claude' ? RAHUL_SESSION : null,
     summary,
@@ -33,8 +34,10 @@ function ev(
   });
 }
 
-export function rahulEvents(): WorkEvent[] {
+// `projectRoot` lets a test place the scenario in a real (temporary) folder.
+export function rahulEvents(projectRoot = RAHUL_ROOT): WorkEvent[] {
   seq = 0;
+  root = projectRoot;
   return [
     ev(
       'claude',

@@ -337,4 +337,42 @@ Task 9: Error: Cannot find module '../../src/brief/facts.ts' (and next-step.ts, 
 
 ## 10. Commit
 
-To be filled in by Task 10's commit (B11). The commit message is `feat(brief): sessions, open problems, claimed-done, next step, facts`.
+Commit `e21e97d`, message `feat(brief): sessions, open problems, claimed-done, next step, facts`.
+
+```
+$ git show --stat --format='%h %s' e21e97d
+e21e97d feat(brief): sessions, open problems, claimed-done, next step, facts
+
+ docs/PROGRESS.md                      |   6 +-
+ docs/leftoff-implementation-plan.md   |  14 +-
+ docs/reports/task-08.md               |  20 +-
+ docs/reports/task-09.md               | 340 +++++++++++++++++++++++++++++
+ src/brief/facts.ts                    | 246 +++++++++++++++++++++
+ src/brief/hash.ts                     |   9 +
+ src/brief/next-step.ts                |  21 ++
+ src/brief/sessions.ts                 |  16 ++
+ src/collectors/claude.ts              |  23 +-
+ src/collectors/codex.ts               |  35 ++-
+ src/collectors/git.ts                 |  14 +-
+ src/collectors/jsonl-reader.ts        |  40 +++-
+ src/collectors/shell.ts               |  11 +-
+ src/collectors/types.ts               |   9 +
+ src/ingest/ingest.ts                  |   6 +-
+ src/model/redact.ts                   |   5 +-
+ tests/brief/facts.test.ts             | 398 ++++++++++++++++++++++++++++++++++
+ tests/brief/next-step.test.ts         |  92 ++++++++
+ tests/brief/rahul.ts                  | 115 ++++++++++
+ tests/brief/sessions.test.ts          |  46 ++++
+ tests/collectors/claude.test.ts       |  53 +++++
+ tests/collectors/codex.test.ts        |  70 ++++++
+ tests/collectors/git.test.ts          |  23 ++
+ tests/collectors/jsonl-reader.test.ts |  34 +++
+ tests/collectors/shell.test.ts        |  40 +++-
+ tests/ingest/ingest.test.ts           |  51 +++++
+ tests/model/redact.test.ts            |  12 +
+ 27 files changed, 1711 insertions(+), 38 deletions(-)
+```
+
+Owner's answers:
+- §9.1: option (a), classify, don't drop. Probe failures (exit 1 or 2, or a read-only tool error) are stored with `data.probe = true` and excluded from open problems and contradictions, but never when the output looks like a test failure or the exit code is different. Plus a weekly probe review in Task 17. Done in Task 10.
+- §8: all three choices confirmed (commit/push/merge words as claims; one open problem per failing command; a shell success resolving an agent failure).

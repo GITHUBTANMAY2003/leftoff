@@ -1,0 +1,17 @@
+Where you left off — myapp (feature/forgot-password) · last active 14h ago
+
+Done
+  • Built POST /auth/forgot-password endpoint
+  • Added reset-token migration
+
+Unfinished
+  • email_service.py (modified, uncommitted)
+
+Open problems
+  ✗ SMTP connection refused
+    tried: changed port to 587 · disabled TLS
+
+Next step
+  → Resolve: SMTP connection refused
+
+Sources: claude ✓  git ✓  shell ✓  codex –

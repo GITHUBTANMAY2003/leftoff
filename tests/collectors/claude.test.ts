@@ -442,3 +442,17 @@ test('soft deadline rotates: a file that always has new data does not starve the
   }
   expect(seenFiles).toEqual(new Set(['active', 'backlog']));
 });
+
+test('probe failures are marked: ls /nope and the missing Read; the test run and lint are not', async () => {
+  install('session-basic.jsonl');
+  const failures = (await collect()).events
+    .filter((e) => e.kind === 'command_failed' || e.kind === 'tool_error')
+    .map((e) => [e.data.command ?? e.data.tool, e.data.probe === true]);
+  expect(failures).toEqual([
+    ['ls /nope', true],
+    ['Read', true],
+    ['node --test 2>&1', false],
+    ['npm run lint 2>&1', false],
+    ['npx --no-install eslint . 2>&1', false],
+  ]);
+});
