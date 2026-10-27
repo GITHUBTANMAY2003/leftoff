@@ -7,7 +7,7 @@ import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom } from './jsonl-reader.ts';
 import { isProbeFailure, isReadOnlyTool } from './probes.ts';
-import { looksLikeTestFailure } from './test-failures.ts';
+import { isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Claude Code collector (plan Task 6). Reads session transcripts incrementally.
@@ -44,6 +44,12 @@ interface FileCursor {
 }
 
 type Draft = { kind: EventKind; summary: string; data: Record<string, unknown> };
+
+const testFailed = (command: string, output: string): Draft => ({
+  kind: 'test_failed',
+  summary: `Tests failed: \`${command}\``,
+  data: { command, output: output.slice(0, MAX_ERROR_CHARS) },
+});
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -84,6 +90,7 @@ function resultDrafts(
     const exit = /^Exit code (\d+)/.exec(output);
     const exitCode = exit ? Number(exit[1]) : isError ? 1 : 0;
     const command = tool.command;
+    if (!isError && isMaskedTestFailure(command, output)) return [testFailed(command, output)];
     if (!isError) return [{ kind: 'command', summary: command, data: { command, exitCode } }];
     const error = (exit ? output.slice(exit[0].length) : output).trim();
     const drafts: Draft[] = [
@@ -98,13 +105,7 @@ function resultDrafts(
         },
       },
     ];
-    if (looksLikeTestFailure(output)) {
-      drafts.push({
-        kind: 'test_failed',
-        summary: `Tests failed: \`${command}\``,
-        data: { command, output: error.slice(0, MAX_ERROR_CHARS) },
-      });
-    }
+    if (looksLikeTestFailure(output)) drafts.push(testFailed(command, error));
     return drafts;
   }
   if (tool && EDIT_TOOLS.has(tool.name) && !isError && tool.path) {

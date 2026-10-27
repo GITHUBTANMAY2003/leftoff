@@ -365,6 +365,31 @@ test('a command that completed with a non-zero exit code is command_failed', () 
   expect(e).toMatchObject({ kind: 'command_failed', data: { command: 'make', exitCode: 2 } });
 });
 
+test('a failing test run piped through `| tail` (exit 0 from tail) is still test_failed', () => {
+  const run = (output: string) =>
+    parseCodexRecord(
+      {
+        timestamp: '2026-10-26T15:00:00.000Z',
+        ordinal: 6,
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          thread_id: 't',
+          item: {
+            type: 'CommandExecution',
+            command: ['bash', '-lc', 'npm test 2>&1 | tail -20'],
+            status: 'completed',
+            exit_code: 0,
+            aggregated_output: output,
+          },
+        },
+      },
+      { cwd: FIXTURE_CWD },
+    ).map((e) => e.kind);
+  expect(run('Tests: 1 failed, 4 passed')).toEqual(['test_failed']);
+  expect(run('Tests: 5 passed')).toEqual(['command']);
+});
+
 test('only item_completed counts: an item_started record with the same item adds nothing', () => {
   const rec = (type: string) => ({
     timestamp: '2026-10-26T15:00:00.000Z',

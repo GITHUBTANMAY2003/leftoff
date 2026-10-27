@@ -517,4 +517,4 @@ Additions the plan's interfaces didn't have:
 
 ## 10. Commit
 
-To be filled in by Task 12's commit (B11). The commit message is `feat(cli): standup and loose-ends commands`.
+`67ff785` — `feat(cli): standup and loose-ends commands` (filled in by Task 12's commit, B11).

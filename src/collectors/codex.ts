@@ -8,7 +8,7 @@ import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom, readZstJsonl } from './jsonl-reader.ts';
 import { isProbeFailure } from './probes.ts';
-import { looksLikeTestFailure } from './test-failures.ts';
+import { isMaskedTestFailure, looksLikeTestFailure } from './test-failures.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Codex CLI collector (plan Task 7). Record shapes come from a real codex-cli
@@ -39,6 +39,12 @@ export interface CodexState {
 }
 
 type Draft = { kind: EventKind; summary: string; data: Record<string, unknown> };
+
+const testFailed = (command: string, output: string): Draft => ({
+  kind: 'test_failed',
+  summary: `Tests failed: \`${command}\``,
+  data: { command, output: output.slice(0, MAX_ERROR_CHARS) },
+});
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -107,6 +113,7 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
         typeof item.exit_code === 'number' ? item.exit_code : item.status === 'failed' ? 1 : 0;
       const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : '';
       if (item.status !== 'failed' && exitCode === 0) {
+        if (isMaskedTestFailure(command, output)) return [testFailed(command, output.trim())];
         return [{ kind: 'command', summary: command, data: { command, exitCode } }];
       }
       const drafts: Draft[] = [
@@ -121,13 +128,7 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
           },
         },
       ];
-      if (looksLikeTestFailure(output)) {
-        drafts.push({
-          kind: 'test_failed',
-          summary: `Tests failed: \`${command}\``,
-          data: { command, output: output.trim().slice(0, MAX_ERROR_CHARS) },
-        });
-      }
+      if (looksLikeTestFailure(output)) drafts.push(testFailed(command, output.trim()));
       return drafts;
     }
     case 'FileChange': {

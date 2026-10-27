@@ -95,6 +95,28 @@ test.each([
   ['npm test -- --grep=foo', 'npm test -- --grep=foo'],
   ['FOO=1', 'FOO=1'], // a bare assignment is the command itself
   ['\tgit\n status ', 'git status'],
+  // Redirections, a leading `cd <dir> &&` and trailing output-trimming pipes
+  // are stripped (owner decision after Task 11).
+  ['npm run lint 2>&1', 'npm run lint'],
+  ['npm test >/dev/null', 'npm test'],
+  ['npm test 2>/dev/null', 'npm test'],
+  ['npm test &>/dev/null', 'npm test'],
+  ['npm test > /dev/null 2>&1', 'npm test'],
+  ['make build >build.log', 'make build'],
+  ['make build >> build.log', 'make build'],
+  ['cd /x && npm test', 'npm test'],
+  ['cd "/my dir" && cd sub && FOO=1 npm test', 'npm test'],
+  ['npm test 2>&1 | tail -20', 'npm test'],
+  ['npm test | head -n 5 | cat', 'npm test'],
+  ['git log | less', 'git log'],
+  ['cd /x && npm test 2>&1 | tail -5', 'npm test'],
+  ['echo "a > b"', 'echo "a > b"'], // inside quotes: not a redirection
+  ["grep 'x | tail' f", "grep 'x | tail' f"],
+  ['npm test | grep fail', 'npm test | grep fail'], // only trimming pipes are stripped
+  ['cd /x', 'cd /x'], // a lone cd is the command itself
+  ['make 2>&1 build', 'make build'], // 2>&1 has no file after it
+  ['npm test | cat -A', 'npm test | cat -A'], // cat and less only when bare
+  ['cd /x; npm test', 'cd /x; npm test'], // only `cd <dir> &&` is stripped
 ])('normalizeCommand(%j) → %j', (input, expected) =>
   expect(normalizeCommand(input)).toBe(expected),
 );

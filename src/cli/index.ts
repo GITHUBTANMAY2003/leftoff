@@ -1,6 +1,7 @@
 import { Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { logError } from '../core/logger.ts';
+import { runInternalSummarizeCommand } from './commands/internal.ts';
 import { runLoops } from './commands/loops.ts';
 import { runNote } from './commands/note.ts';
 import { runResume } from './commands/resume.ts';
@@ -8,7 +9,8 @@ import { runStandup } from './commands/standup.ts';
 
 const program = new Command().name('leftoff').description(pkg.description).version(pkg.version);
 
-const print = (r: { output: string; exitCode: number }) => {
+const print = (r: { output: string; exitCode: number; stderr?: string }) => {
+  if (r.stderr) process.stderr.write(r.stderr + '\n');
   process.stdout.write(r.output + '\n');
   process.exitCode = r.exitCode;
 };
@@ -28,9 +30,11 @@ program
   .option('--project <path>', 'a project other than the current folder')
   .addOption(new Option('--json', 'print the facts as JSON').conflicts('md'))
   .addOption(new Option('--md', 'print Markdown').conflicts('json'))
-  .action(async (o: { project?: string; json?: boolean; md?: boolean }) => {
+  .option('--polish', 'write the AI summary now (needs a polish provider from setup)')
+  .action(async (o: { project?: string; json?: boolean; md?: boolean; polish?: boolean }) => {
     const format = o.json ? 'json' : o.md ? 'md' : 'terminal';
-    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish: false }));
+    const polish = Boolean(o.polish);
+    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish }));
   });
 
 program
@@ -58,6 +62,13 @@ program
     await runNote(process.cwd(), words.join(' '));
     process.stdout.write('Noted.\n');
   });
+
+// Hidden: used by hooks and background jobs.
+program
+  .command('internal', { hidden: true })
+  .command('summarize')
+  .requiredOption('--project <path>', 'the project to summarize')
+  .action(async (o: { project: string }) => runInternalSummarizeCommand(o.project));
 
 // Commands from later tasks are registered here.
 

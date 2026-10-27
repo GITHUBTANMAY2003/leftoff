@@ -68,8 +68,8 @@ const facts = (root: string) =>
 test('Claude session: only lint is open; ls /nope and the missing Read are probes', () => {
   const f = facts(CLAUDE_ROOT);
   expect(f.openProblems.map(problemText)).toEqual([
-    '`npx --no-install eslint . 2>&1` — npm error npx canceled due to missing packages and no YES option: ["eslint@10.13.0"]',
-    '`npm run lint 2>&1` — npm error Missing script: "lint"',
+    '`npx --no-install eslint .` — npm error npx canceled due to missing packages and no YES option: ["eslint@10.13.0"]',
+    '`npm run lint` — npm error Missing script: "lint"',
   ]);
   // The failing test run was genuine, and resolved by the passing re-run.
   expect(f.claimedDone?.contradictions).toHaveLength(2);

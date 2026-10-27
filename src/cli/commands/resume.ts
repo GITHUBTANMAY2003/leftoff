@@ -5,6 +5,7 @@ import { loadConfig } from '../../core/config.ts';
 import { logError } from '../../core/logger.ts';
 import { ingest, type IngestReport } from '../../ingest/ingest.ts';
 import { resolveProject } from '../../model/project.ts';
+import { polishNow } from '../../polish/summarize.ts';
 import { renderJson } from '../../render/json.ts';
 import { renderMarkdown } from '../../render/markdown.ts';
 import { renderTerminal } from '../../render/terminal.ts';
@@ -12,21 +13,23 @@ import { openDb } from '../../store/db.ts';
 import { createRepo } from '../../store/repo.ts';
 
 const INGEST_BUDGET_MS = 1200;
+const POLISH_OFF =
+  'Polish is off. Turn it on with `leftoff setup` or `leftoff config set polish.provider <claude-cli|ollama|…>`.';
 
 export interface ResumeOptions {
   cwd: string;
   project?: string;
   format: 'terminal' | 'md' | 'json';
-  // `--polish` (run the polish provider now) arrives with Task 12; until then a
-  // cached polished summary is used when its facts still match.
+  // `--polish`: run the polish provider now (up to 60 s). Without it a cached
+  // polished summary is used only while its facts still match.
   polish: boolean;
 }
 
 // `leftoff resume` (§1.10): ingest → live git state → facts → cached polish →
-// render → remember the brief was shown.
+// render → remember the brief was shown. `--polish` polishes before rendering.
 export async function runResume(
   opts: ResumeOptions,
-): Promise<{ output: string; exitCode: number }> {
+): Promise<{ output: string; exitCode: number; stderr?: string }> {
   const root = resolveProject(opts.project ?? opts.cwd);
   const config = loadConfig();
   const now = new Date();
@@ -56,6 +59,8 @@ export async function runResume(
       };
     }
 
+    const polishOff = opts.polish && config.polish.provider === 'off';
+    if (opts.polish && !polishOff) await polishNow(root, { repo, config, now, working });
     const cached = repo.getBrief(root);
     const polished = cached && cached.factsHash === factsHash(facts) ? cached.polished : null;
     const color = !process.env.NO_COLOR && Boolean(process.stdout.isTTY);
@@ -66,7 +71,7 @@ export async function runResume(
           ? renderMarkdown(facts, polished, { now })
           : renderTerminal(facts, polished, { color, now });
     if (facts.lastActiveAt) repo.markBriefShown(root, facts.lastActiveAt);
-    return { output, exitCode: 0 };
+    return { output, exitCode: 0, ...(polishOff ? { stderr: POLISH_OFF } : {}) };
   } finally {
     db.close();
   }

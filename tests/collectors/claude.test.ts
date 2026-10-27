@@ -295,6 +295,25 @@ test('secrets in commands and tool output are redacted', async () => {
   expect(JSON.stringify(e)).not.toMatch(/ghp_a|hunter2/);
 });
 
+test('a failing test run piped through `| tail` (exit 0 from tail) is still test_failed', async () => {
+  const cmd = 'npm test 2>&1 | tail -20';
+  writeFileSync(
+    join(projectDir, 'masked.jsonl'),
+    toolUse('toolu_m', 'Bash', { command: cmd }) +
+      toolResult('toolu_m', 'Tests: 1 failed, 4 passed', false) +
+      toolUse('toolu_p', 'Bash', { command: cmd }) +
+      toolResult('toolu_p', 'Tests: 5 passed', false) +
+      toolUse('toolu_c', 'Bash', { command: 'cat old-run.log' }) +
+      toolResult('toolu_c', 'Tests: 1 failed', false),
+  );
+  const events = (await collect()).events;
+  expect(events.map((e) => [e.kind, e.data.command])).toEqual([
+    ['test_failed', cmd],
+    ['command', cmd],
+    ['command', 'cat old-run.log'], // no trimming pipe: exit 0 is trusted
+  ]);
+});
+
 test('sessions whose cwd is inside LEFTOFF_HOME are ignored', async () => {
   writeFileSync(
     join(projectDir, 'polish.jsonl'),

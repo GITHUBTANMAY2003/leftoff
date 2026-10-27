@@ -87,6 +87,23 @@ test('success matching uses the normalized command (whitespace, leading env assi
   expect(findOpenProblems(events)).toEqual([]);
 });
 
+test('an agent failure with 2>&1 is resolved by the same command succeeding in your shell', () => {
+  const [failure, success] = timeline(
+    fail('npm run lint 2>&1', 'Missing script: "lint"'),
+    ok('npm run lint'),
+  );
+  const fromShell = { ...(success as WorkEvent), source: 'shell' as const };
+  expect(findOpenProblems([failure as WorkEvent, fromShell])).toEqual([]);
+});
+
+test('a leading `cd <dir> &&` is ignored when matching, and the command is shown without it', () => {
+  expect(findOpenProblems(timeline(fail('cd /x && npm test', '1 failed'), ok('npm test')))).toEqual(
+    [],
+  );
+  const [p] = findOpenProblems(timeline(fail('cd /x && npm test 2>&1 | tail -20', '1 failed')));
+  expect(p?.command).toBe('npm test');
+});
+
 test('a success before the failure does not resolve it', () => {
   expect(findOpenProblems(timeline(ok('npm test'), fail('npm test', '1 failed')))).toHaveLength(1);
 });

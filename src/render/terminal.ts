@@ -15,6 +15,14 @@ export function fit(prefix: string, text: string, width = LINE_WIDTH): string {
   return chars.length <= room ? text : chars.slice(0, Math.max(0, room - 1)).join('') + '…';
 }
 
+// Cuts `text` but keeps `tail` whole after it, so an ending such as
+// "(still failing)" or "(2 attempts)" always survives (owner decision, Task 11).
+export function fitKeepingTail(prefix: string, text: string, tail: string): string {
+  return fit(prefix + tail, text) + tail;
+}
+
+const STILL_FAILING = ' (still failing)';
+
 const STATUS_MARK = { ok: '✓', not_found: '–', error: '!' } as const;
 
 type Paint = (text: string) => string;
@@ -74,7 +82,11 @@ export function renderTerminal(
   };
   const bullet = (text: string) => `  • ${fit('  • ', text)}`;
   const problem = (text: string, attempts: string[]) => [
-    `  ${p.red('✗')} ${fit('  ✗ ', text)}`,
+    `  ${p.red('✗')} ${
+      text.endsWith(STILL_FAILING)
+        ? fitKeepingTail('  ✗ ', text.slice(0, -STILL_FAILING.length), STILL_FAILING)
+        : fit('  ✗ ', text)
+    }`,
     ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
   ];
   const { claimed, open } = splitProblems(f);

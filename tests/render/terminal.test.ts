@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import type { BriefFacts } from '../../src/brief/facts.ts';
+import { contradictionOf, type BriefFacts } from '../../src/brief/facts.ts';
 import { renderTerminal } from '../../src/render/terminal.ts';
 import { RAHUL_NOW, rahulFacts } from './helpers.ts';
 
@@ -106,6 +106,22 @@ test('lines longer than 100 characters are cut with "…" in the terminal', () =
   const colored = renderTerminal(f, null, { color: true, now: RAHUL_NOW });
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(colored.replace(/\x1b\[[0-9;]*m/g, '')).toBe(plain);
+});
+
+test('a long contradiction is cut inside the error, so "(still failing)" stays visible', () => {
+  const op = {
+    error: `npm error ${'x'.repeat(200)}`,
+    command: 'npm run lint',
+    isTest: false,
+    source: 'claude' as const,
+    firstSeen: '2026-10-20T18:00:00.000Z',
+    attempts: [],
+  };
+  const f = { ...claimed([contradictionOf(op)]), openProblems: [op] };
+  const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  const line = lines.find((l) => l.startsWith('  ✗ `npm run lint`')) as string;
+  expect([...line]).toHaveLength(100);
+  expect(line).toMatch(/^ {2}✗ `npm run lint` — npm error x+… \(still failing\)$/);
 });
 
 test('Notes render after Open problems and before Next step', () => {
