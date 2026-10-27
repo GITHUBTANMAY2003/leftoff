@@ -88,7 +88,7 @@ test('maps a successful line to a command event', async () => {
     ts: '2024-10-24T10:00:00.123Z',
     sessionRef: 'shell:77',
     summary: 'npm test',
-    data: { exitCode: 0, durationMs: 12, cwd: work },
+    data: { command: 'npm test', exitCode: 0, durationMs: 12, cwd: work },
   });
 });
 
@@ -97,7 +97,7 @@ test('exit code != 0 becomes command_failed', async () => {
   const [e] = (await shellCollector.collect(ctx)).events;
   expect(e?.kind).toBe('command_failed');
   expect(e?.summary).toBe('`ls /nope` exited 1');
-  expect(e?.data.exitCode).toBe(1);
+  expect(e?.data).toMatchObject({ command: 'ls /nope', exitCode: 1 });
 });
 
 test('duration -1 (bash) is stored as durationMs null', async () => {
@@ -292,4 +292,40 @@ test('a single line longer than maxBytesPerFilePerRun is skipped instead of stal
     await commit(r);
   }
   expect(seen).toEqual(['ok']);
+});
+
+test('soft deadline: one ingesting file per run; the other keeps its place and is read next run', async () => {
+  writeFileSync(
+    join(paths().shellDir, 'shell.log.1.1.ingesting'),
+    line('old', { ts: 1729764000000 }),
+  );
+  writeFileSync(log(), line('new', { ts: 1729764100000 }));
+  ctx.deadline = 0;
+  const r1 = await shellCollector.collect(ctx);
+  expect(r1.events.map((e) => e.summary)).toEqual(['old']);
+  await commit(r1);
+  const r2 = await shellCollector.collect(ctx);
+  expect(r2.events.map((e) => e.summary)).toEqual(['new']);
+  await commit(r2);
+  expect((await shellCollector.collect(ctx)).events).toEqual([]);
+  expect(ingesting()).toEqual([]);
+});
+
+test('soft deadline: an unreached file that was partly read keeps its committed offset', async () => {
+  const later = join(paths().shellDir, 'shell.log.2.2.ingesting');
+  writeFileSync(later, line('already read', { ts: 1729764000000 }) + 'partial');
+  await commit(await shellCollector.collect(ctx)); // offset now after "already read"
+  writeFileSync(
+    join(paths().shellDir, 'shell.log.1.1.ingesting'),
+    line('first file', { ts: 1729764001000 }),
+  );
+  appendFileSync(later, '-now-complete\n');
+  ctx.deadline = 0;
+  const r1 = await shellCollector.collect(ctx); // reaches only shell.log.1.1
+  expect(r1.events.map((e) => e.summary)).toEqual(['first file']);
+  await commit(r1);
+  const r2 = await shellCollector.collect(ctx);
+  // Only the completed line, not "already read" again.
+  expect(r2.warnings).toEqual([expect.stringMatching(/^malformed:1:.*shell\.log\.2\.2/)]);
+  expect(r2.events).toEqual([]);
 });

@@ -8,7 +8,7 @@ import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom, readZstJsonl } from './jsonl-reader.ts';
 import { looksLikeTestFailure } from './test-failures.ts';
-import type { CollectContext, CollectResult, Collector } from './types.ts';
+import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Codex CLI collector (plan Task 7). Record shapes come from a real codex-cli
 // 0.163.0 session; see tests/fixtures/codex/README.md. Events come only from
@@ -188,11 +188,14 @@ export function parseCodexRecord(rec: unknown, state: CodexState): WorkEvent[] {
 
 interface PlainCursor extends CodexState {
   offset: number;
+  readAt?: string;
 }
+// size/mtimeMs are -1 while a file is only partly read (soft deadline).
 interface ZstCursor extends CodexState {
   size: number;
   mtimeMs: number;
   lines: number;
+  readAt?: string;
 }
 
 function readCursor<T extends object>(value: string | null): Partial<T> {
@@ -233,7 +236,15 @@ export const codexCollector: Collector = {
       }
     };
 
-    for (const file of await listRollouts(join(codexDir(), 'sessions'))) {
+    // Least recently read first, so a soft deadline rotates through a backlog.
+    const readAt = (file: string) =>
+      String(readCursor<{ readAt: string }>(ctx.repo.getCursor('codex', file)).readAt ?? '');
+    const queue = (await listRollouts(join(codexDir(), 'sessions')))
+      .map((file) => ({ file, at: readAt(file) }))
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .map((q) => q.file);
+    let didWork = false;
+    for (const file of queue) {
       let info: { size: number; mtimeMs: number };
       try {
         info = await stat(file);
@@ -245,6 +256,8 @@ export const codexCollector: Collector = {
       if (file.endsWith('.zst')) {
         const cursor = readCursor<ZstCursor>(ctx.repo.getCursor('codex', file));
         if (cursor.size === info.size && cursor.mtimeMs === info.mtimeMs) continue;
+        if (didWork && pastDeadline(ctx)) break; // soft deadline: keep what's done
+        didWork = true;
         if (info.size > ctx.config.codex.maxCompressedMb * MB) {
           result.warnings.push(
             `too large, skipped: ${file} (${(info.size / MB).toFixed(1)} MB > codex.maxCompressedMb ${ctx.config.codex.maxCompressedMb})`,
@@ -252,13 +265,14 @@ export const codexCollector: Collector = {
           continue;
         }
         const state: CodexState = { cwd: cursor.cwd ?? null, threadId: cursor.threadId ?? null };
-        const read = await readZstJsonl(file, cursor.lines ?? 0);
+        const read = await readZstJsonl(file, cursor.lines ?? 0, ctx.deadline);
         for (const rec of read.records) keep(parseCodexRecord(rec, state));
         if (read.malformed > 0) result.warnings.push(`malformed:${read.malformed}:${file}`);
         const next: ZstCursor = {
-          size: info.size,
-          mtimeMs: info.mtimeMs,
+          size: read.complete ? info.size : -1,
+          mtimeMs: read.complete ? info.mtimeMs : -1,
           lines: read.totalLines,
+          readAt: new Date().toISOString(),
           ...state,
         };
         result.pendingCursors.push({ key: file, value: JSON.stringify(next) });
@@ -266,15 +280,24 @@ export const codexCollector: Collector = {
         const cursor = readCursor<PlainCursor>(ctx.repo.getCursor('codex', file));
         const offset =
           typeof cursor.offset === 'number' && cursor.offset <= info.size ? cursor.offset : 0;
+        if (offset === info.size) continue; // nothing new
+        if (didWork && pastDeadline(ctx)) break; // soft deadline: keep what's done
+        didWork = true;
         const state: CodexState =
           offset > 0 ? { cwd: cursor.cwd ?? null, threadId: cursor.threadId ?? null } : {};
-        const read = await readJsonlFrom(file, offset, ctx.config.ingest.maxBytesPerFilePerRun);
+        const read = await readJsonlFrom(
+          file,
+          offset,
+          ctx.config.ingest.maxBytesPerFilePerRun,
+          ctx.deadline,
+        );
         for (const { value } of read.records) keep(parseCodexRecord(value, state));
         if (read.malformed > 0) result.warnings.push(`malformed:${read.malformed}:${file}`);
         const next: PlainCursor = {
           offset: read.nextOffset,
           cwd: state.cwd ?? null,
           threadId: state.threadId ?? null,
+          readAt: new Date().toISOString(),
         };
         result.pendingCursors.push({ key: file, value: JSON.stringify(next) });
       }

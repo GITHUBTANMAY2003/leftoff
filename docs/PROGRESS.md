@@ -15,8 +15,8 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 | 5 | Git collector ([report](reports/task-05.md)) | done | `166ee39` | Git cursor is JSON `{ commit, reflogAt, reflogKeys }`; `<cursor>..HEAD` bounded by `retentionDays`; `git diff --shortstat HEAD`; no `symbolic-ref` call. Also: fish tests run under a pty (`script`); redaction fix for in-word `-name` "flags" (found by the §1.1 names) |
 | 6 | Incremental JSONL reader and Claude Code collector ([report](reports/task-06.md)) | done | `620bb27` | Claude cursor JSON `{ offset, toolUses }` plus a `__scan` cursor; tool events emitted at result time; `test_failed` only for failed results; no session_start/end from transcripts (hooks do it). Fold-ins: only your own commits (author email per repo, no merges); shared ignore module |
 | 7 | Codex CLI collector ([report](reports/task-07.md)) | done | `195d6cb` | Events only from `item_completed` (response_items repeat them); `parseCodexRecord(rec, state)`; dedupe key `(thread_id, ordinal)` so .jsonl→.zst adds no rows; JSON cursors; `engines >=22.15` (zstd exists). Fold-in: shared test-failure patterns |
-| 8 | Ingest orchestrator ([report](reports/task-08.md)) | done | (filled in by Task 9) | `Repo.transaction(fn)` added (needed for the one-transaction commit); `opts.collectors` test seam; `perSource` keyed by the four collectors. Open: soft deadline so big first backlogs make progress (awaiting owner) |
-| 9 | Work sessions and brief facts | not started | | |
+| 8 | Ingest orchestrator ([report](reports/task-08.md)) | done | `020e67b` | `Repo.transaction(fn)` added (needed for the one-transaction commit); `opts.collectors` test seam; `perSource` keyed by the four collectors. Soft deadline approved and added in Task 9 |
+| 9 | Work sessions and brief facts ([report](reports/task-09.md)) | done | (filled in by Task 10) | `committed/pushed/merged` added to the claim regex (R-D1); failures grouped per normalized command; shell events carry `data.command`; attempts = first 5. Also: soft deadline + rotation (owner decision); redaction NAME=value rule was quadratic (16 s per 100 KB) — fixed |
 | 10 | Renderers, `resume` and `note` commands | not started | | |
 | 11 | Standup and loose-ends commands | not started | | |
 | 12 | AI polish providers and background summarize | not started | | |
@@ -29,4 +29,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 9: Work sessions and brief facts.** Waiting for the owner's `continue` and the answer on the soft deadline (Task 8 report §9.1).
+**Task 10: Renderers, `resume` and `note` commands.** Waiting for the owner's `continue` and the decision on exploratory failures (Task 9 report §9.1).

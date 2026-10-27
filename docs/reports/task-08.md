@@ -172,4 +172,22 @@ tests/ingest/ingest.test.ts → Error: Cannot find module '../../src/collectors/
 
 ## 10. Commit
 
-To be filled in by Task 9's commit (B11). The commit message is `feat(ingest): isolated collector runs with transactional cursors`.
+Commit `020e67b`, message `feat(ingest): isolated collector runs with transactional cursors`.
+
+```
+$ git show --stat --format='%h %s' 020e67b
+020e67b feat(ingest): isolated collector runs with transactional cursors
+
+ docs/PROGRESS.md                    |   6 +-
+ docs/leftoff-implementation-plan.md |   4 +-
+ docs/reports/task-07.md             |  31 +++-
+ docs/reports/task-08.md             | 175 +++++++++++++++++++
+ src/collectors/registry.ts          |  14 ++
+ src/ingest/ingest.ts                | 118 +++++++++++++
+ src/store/repo.ts                   |   4 +
+ tests/ingest/ingest.test.ts         | 332 ++++++++++++++++++++++++++++++++++++
+ tests/store/repo.test.ts            |  25 +++
+ 9 files changed, 703 insertions(+), 6 deletions(-)
+```
+
+Owner's answer to §9.1: yes, add the soft deadline (`CollectContext.deadline`; partial progress always committed; hard timeout kept). Tests: a backlog finishes over runs with no duplicates and no lost lines. Background ingest uses about 20 s; `setup` runs a 60 s catch-up with a progress line. Done in Task 9's commit.

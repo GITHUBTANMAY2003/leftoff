@@ -37,7 +37,10 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   ],
   // NAME=value, --name=value
   [
-    /([A-Za-z_][A-Za-z0-9_.-]*)=("[^"]*"|'[^']*'|[^\s"'&]+)/g,
+    // A name starts only where no name character precedes it (leading dashes
+    // belong to the name: --token=x). Without that, every letter of a long word
+    // was a new start and the scan was quadratic (100 KB took 16 s).
+    /(?<![A-Za-z0-9_.-])(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)=("[^"]*"|'[^']*'|[^\s"'&]+)/g,
     (whole, name) => (isSecretName(name as string) ? `${name}=${R}` : (whole as string)),
   ],
   // --name value. A flag starts the text or follows whitespace ("-token" in

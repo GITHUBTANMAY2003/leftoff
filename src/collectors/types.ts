@@ -7,6 +7,15 @@ export interface CollectContext {
   config: Config;
   now: Date;
   projectFilter?: string;
+  // Soft deadline (epoch ms). Collectors always finish their first unit of work
+  // (a file, a chunk, a project), then stop starting new units once it has
+  // passed and return what they completed, so every run commits progress even
+  // on a large backlog. Ingest also keeps a hard timeout as a safety net.
+  deadline?: number;
+}
+
+export function pastDeadline(ctx: CollectContext): boolean {
+  return ctx.deadline !== undefined && Date.now() >= ctx.deadline;
 }
 
 // Collectors only *read* cursors; ingest (Task 8) inserts the events and

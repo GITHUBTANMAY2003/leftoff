@@ -22,6 +22,9 @@ export interface IngestReport {
 }
 
 const DEFAULT_BUDGET_MS = 1200;
+// Collectors stop starting new work at this fraction of their slice; the rest is
+// headroom for the unit in progress before the hard timeout.
+const SOFT_DEADLINE_FRACTION = 0.6;
 const PRUNE_EVERY_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
@@ -62,9 +65,10 @@ export async function ingest(
 
 async function runOne(
   collector: Collector,
-  ctx: CollectContext,
+  base: CollectContext,
   budgetMs: number,
 ): Promise<SourceReport> {
+  const ctx: CollectContext = { ...base, deadline: Date.now() + budgetMs * SOFT_DEADLINE_FRACTION };
   let result: CollectResult | 'not_found' | undefined;
   try {
     result = await withBudget(

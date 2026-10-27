@@ -327,3 +327,26 @@ describe('readWorkingState', () => {
     expect(readWorkingState(root)).toEqual({ branch: null, files: [], diffStat: null });
   });
 });
+
+test('soft deadline: one project per run; the rest are reached in later runs', async () => {
+  const roots = ['a', 'b', 'c'].map((n) => {
+    const root = initRepo(tmp, n);
+    commit(root, `commit in ${n}`);
+    track(root);
+    return root;
+  });
+  ctx.deadline = 0;
+  const seen: string[] = [];
+  let runs = 0;
+  for (
+    let r = await gitCollector.collect(ctx);
+    r.events.length > 0 && runs < 10;
+    r = await gitCollector.collect(ctx)
+  ) {
+    runs++;
+    seen.push(...summaries(r, 'commit'));
+    await commitResult(r);
+  }
+  expect(runs).toBe(3);
+  expect(seen.sort()).toEqual(roots.map((_, i) => `commit in ${'abc'[i]}`));
+});

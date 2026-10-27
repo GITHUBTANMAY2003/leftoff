@@ -13,7 +13,7 @@ import { paths } from '../core/paths.ts';
 import { dedupeKey, makeEvent, type WorkEvent } from '../model/event.ts';
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
-import type { CollectContext, CollectResult, Collector } from './types.ts';
+import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Reads the lines the shell hooks append to shell.log (plan Task 4):
 //   ts_epoch_ms \t exit_code \t duration_ms \t pid \t cwd \t command
@@ -70,7 +70,7 @@ function toEvent(raw: string, p: ParsedLine): WorkEvent {
     ts: new Date(p.tsMs).toISOString(),
     sessionRef: `shell:${p.pid}`,
     summary: failed ? `\`${p.command}\` exited ${p.exitCode}` : p.command,
-    data: { exitCode: p.exitCode, durationMs: p.durationMs, cwd: p.cwd },
+    data: { command: p.command, exitCode: p.exitCode, durationMs: p.durationMs, cwd: p.cwd },
     // The line itself: stable however often the file is renamed or re-read.
     dedupeKey: dedupeKey('shell', raw),
   });
@@ -141,7 +141,12 @@ export const shellCollector: Collector = {
     const committed = readOffsets(ctx.repo.getCursor('shell', CURSOR_KEY));
     const ignore = compileIgnore(ctx.config);
     const next: Record<string, number> = {};
-    for (const name of files) {
+    for (const [i, name] of files.entries()) {
+      if (i > 0 && pastDeadline(ctx)) {
+        // Soft deadline: files not reached keep their committed place.
+        for (const rest of files.slice(i)) next[rest] = committed[rest] ?? 0;
+        break;
+      }
       const file = join(shellDir, name);
       const chunk = readChunk(file, committed[name] ?? 0, ctx.config.ingest.maxBytesPerFilePerRun);
       let malformed = 0;

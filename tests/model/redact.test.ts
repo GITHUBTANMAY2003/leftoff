@@ -125,3 +125,15 @@ test('redactDeep does not mutate its input', () => {
   redactDeep(input);
   expect(input).toEqual({ a: { b: 'GH_TOKEN=abc' } });
 });
+
+// Regression (found by the soft-deadline tests, Task 9): rules that can start
+// matching at every character of a long word were quadratic.
+test.each([
+  ['one long word', 'x'.repeat(100_000)],
+  ['long words with dashes and dots', 'a.b-c_d'.repeat(15_000)],
+  ['long prose', 'the quick brown fox jumps over the lazy dog '.repeat(2500)],
+])('redact is fast on %s (100 KB in < 50 ms)', (_name, text) => {
+  const started = performance.now();
+  expect(redact(text)).toBe(text);
+  expect(performance.now() - started).toBeLessThan(50);
+});

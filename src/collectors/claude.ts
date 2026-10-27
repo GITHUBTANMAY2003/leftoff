@@ -7,7 +7,7 @@ import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
 import { readJsonlFrom } from './jsonl-reader.ts';
 import { looksLikeTestFailure } from './test-failures.ts';
-import type { CollectContext, CollectResult, Collector } from './types.ts';
+import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Claude Code collector (plan Task 6). Reads session transcripts incrementally.
 // Record shapes come from real Claude Code 2.1.310 transcripts; see
@@ -39,6 +39,7 @@ export interface PendingTool {
 interface FileCursor {
   offset: number;
   toolUses: Record<string, PendingTool>;
+  readAt?: string; // when this file was last read: least recently read goes first
 }
 
 type Draft = { kind: EventKind; summary: string; data: Record<string, unknown> };
@@ -193,6 +194,7 @@ function readCursor(value: string | null): FileCursor {
     return {
       offset: typeof c.offset === 'number' && c.offset >= 0 ? c.offset : 0,
       toolUses: isObject(c.toolUses) ? (c.toolUses as Record<string, PendingTool>) : {},
+      ...(typeof c.readAt === 'string' ? { readAt: c.readAt } : {}),
     };
   } catch {
     return { offset: 0, toolUses: {} };
@@ -231,20 +233,29 @@ export const claudeCollector: Collector = {
         files.add(e.data.transcriptPath);
     }
 
-    for (const file of files) {
-      const cursor = readCursor(ctx.repo.getCursor('claude', file));
+    // Least recently read first, so a soft deadline rotates through a backlog
+    // instead of always serving the same files.
+    const queue = [...files]
+      .map((file) => ({ file, cursor: readCursor(ctx.repo.getCursor('claude', file)) }))
+      .sort((a, b) => (a.cursor.readAt ?? '').localeCompare(b.cursor.readAt ?? ''));
+    let didWork = false;
+    for (const { file, cursor } of queue) {
       let size: number;
       try {
         size = (await stat(file)).size;
       } catch {
         continue; // reported by a hook but gone, or deleted meanwhile
       }
+      if (size === cursor.offset) continue; // nothing new: costs nothing, isn't a unit of work
+      if (didWork && pastDeadline(ctx)) break; // soft deadline: keep what's done
+      didWork = true;
       const restarted = size < cursor.offset; // rewritten: pending tool calls are void
       const tools = new Map(restarted ? [] : Object.entries(cursor.toolUses));
       const read = await readJsonlFrom(
         file,
         cursor.offset,
         ctx.config.ingest.maxBytesPerFilePerRun,
+        ctx.deadline,
       );
       for (const { value, endOffset } of read.records) {
         for (const event of parseClaudeRecord(value, file, endOffset, tools)) {
@@ -254,7 +265,11 @@ export const claudeCollector: Collector = {
         }
       }
       if (read.malformed > 0) result.warnings.push(`malformed:${read.malformed}:${file}`);
-      const next: FileCursor = { offset: read.nextOffset, toolUses: Object.fromEntries(tools) };
+      const next: FileCursor = {
+        offset: read.nextOffset,
+        toolUses: Object.fromEntries(tools),
+        readAt: new Date().toISOString(),
+      };
       result.pendingCursors.push({ key: file, value: JSON.stringify(next) });
     }
     result.pendingCursors.push({ key: SCAN_KEY, value: ctx.now.toISOString() });

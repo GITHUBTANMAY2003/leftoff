@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { zstdCompressSync } from 'node:zlib';
 import { join, resolve } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, expect, test } from 'vitest';
@@ -377,4 +378,73 @@ test('only item_completed counts: an item_started record with the same item adds
   });
   expect(parseCodexRecord(rec('item_started'), { cwd: FIXTURE_CWD })).toEqual([]);
   expect(parseCodexRecord(rec('item_completed'), { cwd: FIXTURE_CWD })).toHaveLength(1);
+});
+
+test('soft deadline: several sessions and a big compressed one finish over runs without duplicates', async () => {
+  install('session-basic.jsonl', 'rollout-a.jsonl');
+  install('session-basic.jsonl', 'rollout-b.jsonl'); // same thread: dedupe makes it 0 new rows
+  const big = Array.from({ length: 2500 }, (_, n) =>
+    JSON.stringify({
+      timestamp: '2026-10-26T15:00:00.000Z',
+      ordinal: n + 1,
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        thread_id: 'big',
+        item: { type: 'UserMessage', content: [{ type: 'text', text: `p${n}` }] },
+      },
+    }),
+  );
+  const meta = JSON.stringify({
+    timestamp: '2026-10-26T15:00:00.000Z',
+    ordinal: 0,
+    type: 'session_meta',
+    payload: { id: 'big', cwd: FIXTURE_CWD },
+  });
+  writeFileSync(
+    join(dayDir, 'rollout-big.jsonl.zst'),
+    zstdCompressSync(Buffer.from([meta, ...big].join('\n') + '\n')),
+  );
+  ctx.deadline = 0;
+  let inserted = 0;
+  let runs = 0;
+  for (let r = await collect(); r.events.length > 0 && runs < 20; r = await collect()) {
+    runs++;
+    inserted += commit(r);
+  }
+  expect(runs).toBeGreaterThan(2);
+  expect(inserted).toBe(BASIC_KINDS.length + 2500);
+});
+
+test('soft deadline rotates between sessions: an always-growing session does not starve the others', async () => {
+  const meta = (id: string) =>
+    JSON.stringify({
+      timestamp: '2026-10-26T15:00:00.000Z',
+      ordinal: 0,
+      type: 'session_meta',
+      payload: { id, cwd: FIXTURE_CWD },
+    }) + '\n';
+  const prompt = (id: string, n: number) =>
+    JSON.stringify({
+      timestamp: '2026-10-26T15:00:00.000Z',
+      ordinal: n,
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        thread_id: id,
+        item: { type: 'UserMessage', content: [{ type: 'text', text: `${id} ${n}` }] },
+      },
+    }) + '\n';
+  const active = join(dayDir, 'rollout-a-active.jsonl');
+  writeFileSync(active, meta('active') + prompt('active', 1));
+  writeFileSync(join(dayDir, 'rollout-b-backlog.jsonl'), meta('backlog') + prompt('backlog', 1));
+  ctx.deadline = 0;
+  const seen = new Set<string>();
+  for (let run = 2; run <= 4; run++) {
+    const r = await collect();
+    for (const e of r.events) seen.add(e.sessionRef ?? '');
+    commit(r);
+    appendFileSync(active, prompt('active', run));
+  }
+  expect(seen).toEqual(new Set(['active', 'backlog']));
 });

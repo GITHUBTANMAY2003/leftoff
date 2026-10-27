@@ -389,3 +389,56 @@ test('test_failed uses the shared patterns: a failing node run without an Assert
   );
   expect((await collect()).events.map((e) => e.kind)).toEqual(['command_failed', 'test_failed']);
 });
+
+test('soft deadline: a backlog bigger than one run finishes over several runs, no duplicates, nothing lost', async () => {
+  for (const n of [1, 2, 3]) install('session-basic.jsonl', `s${n}.jsonl`);
+  ctx.deadline = 0; // already passed: each run does the minimum, one file
+  const keys: string[] = [];
+  let runs = 0;
+  for (let r = await collect(); r.events.length > 0 && runs < 10; r = await collect()) {
+    runs++;
+    keys.push(...r.events.map((e) => e.dedupeKey));
+    commit(r);
+  }
+  expect(runs).toBe(3);
+  expect(keys).toHaveLength(3 * BASIC_KINDS.length);
+  expect(new Set(keys).size).toBe(keys.length);
+});
+
+test('soft deadline: one huge transcript is read in chunks over several runs', async () => {
+  const file = join(projectDir, 'huge.jsonl');
+  writeFileSync(
+    file,
+    Array.from({ length: 3000 }, (_, n) =>
+      record({
+        uuid: `u${n}`,
+        message: { role: 'user', content: `prompt ${n} ${'x'.repeat(1000)}` },
+      }),
+    ).join(''),
+  );
+  ctx.deadline = 0;
+  const prompts: string[] = [];
+  let runs = 0;
+  for (let r = await collect(); r.events.length > 0 && runs < 20; r = await collect()) {
+    runs++;
+    prompts.push(...r.events.map((e) => e.summary.split(' ')[1] as string));
+    commit(r);
+  }
+  expect(runs).toBeGreaterThan(1);
+  expect(prompts).toEqual(Array.from({ length: 3000 }, (_, n) => String(n)));
+});
+
+test('soft deadline rotates: a file that always has new data does not starve the others', async () => {
+  const active = join(projectDir, 'a-active.jsonl');
+  writeFileSync(active, record({ message: { role: 'user', content: 'active 0' } }));
+  install('session-basic.jsonl', 'b-backlog.jsonl');
+  ctx.deadline = 0; // one file per run
+  const seenFiles = new Set<string>();
+  for (let run = 1; run <= 3; run++) {
+    const r = await collect();
+    for (const e of r.events) seenFiles.add(e.summary.startsWith('active') ? 'active' : 'backlog');
+    commit(r);
+    appendFileSync(active, record({ message: { role: 'user', content: `active ${run}` } }));
+  }
+  expect(seenFiles).toEqual(new Set(['active', 'backlog']));
+});

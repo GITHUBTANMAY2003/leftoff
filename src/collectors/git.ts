@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { logError } from '../core/logger.ts';
 import { dedupeKey, makeEvent, type WorkEvent } from '../model/event.ts';
 import { isInsideLeftoffHome } from '../model/project.ts';
-import type { CollectContext, CollectResult, Collector } from './types.ts';
+import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
 // Git collector (plan Task 5): commits and branch switches become events; the
 // uncommitted state is read live by readWorkingState (not stored as events).
@@ -98,6 +98,7 @@ interface GitCursor {
   reflogAt: string | null;
   reflogKeys: string[];
   noEmailLogged: boolean; // "user.email not set" is logged once per repo, not every run
+  checkedAt?: string; // least recently checked goes first (soft deadline rotation)
 }
 
 function readCursor(value: string | null): GitCursor {
@@ -110,6 +111,7 @@ function readCursor(value: string | null): GitCursor {
         ? c.reflogKeys.filter((k) => typeof k === 'string')
         : [],
       noEmailLogged: c.noEmailLogged === true,
+      ...(typeof c.checkedAt === 'string' ? { checkedAt: c.checkedAt } : {}),
     };
   } catch {
     return { commit: null, reflogAt: null, reflogKeys: [], noEmailLogged: false };
@@ -258,10 +260,15 @@ export const gitCollector: Collector = {
     const result: CollectResult = { events: [], pendingCursors: [], warnings: [] };
     const roots = new Set(ctx.repo.projects().map((p) => p.root));
     if (ctx.projectFilter) roots.add(ctx.projectFilter);
-    for (const root of roots) {
+    const queue = [...roots]
+      .map((root) => ({ root, cursor: readCursor(ctx.repo.getCursor('git', root)) }))
+      .sort((a, b) => (a.cursor.checkedAt ?? '').localeCompare(b.cursor.checkedAt ?? ''));
+    let checked = 0;
+    for (const { root, cursor } of queue) {
       if (isInsideLeftoffHome(root)) continue; // recursion guard (§1.9)
+      if (checked > 0 && pastDeadline(ctx)) break; // soft deadline: keep what's done
+      checked++;
       try {
-        const cursor = readCursor(ctx.repo.getCursor('git', root));
         const email = await userEmail(root);
         if (email === null && !cursor.noEmailLogged) {
           logError(
@@ -277,6 +284,7 @@ export const gitCollector: Collector = {
           reflogAt: switches.at,
           reflogKeys: switches.keys,
           noEmailLogged: email === null,
+          checkedAt: new Date().toISOString(),
         };
         result.pendingCursors.push({ key: root, value: JSON.stringify(next) });
       } catch (err) {

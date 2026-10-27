@@ -16,10 +16,13 @@ export interface JsonlRead {
   malformed: number;
 }
 
+// With a deadline (epoch ms), reading stops between 1 MiB chunks once it has
+// passed, as long as at least one line was read.
 export async function readJsonlFrom(
   file: string,
   offset: number,
   maxBytes: number,
+  deadline?: number,
 ): Promise<JsonlRead> {
   const handle = await open(file, 'r');
   try {
@@ -55,11 +58,13 @@ export async function readJsonlFrom(
       }
       if (from < bytesRead) pending.push(buf.subarray(from, bytesRead));
       pos += bytesRead;
+      const progressed = result.records.length + result.malformed > 0;
+      if (progressed && deadline !== undefined && Date.now() >= deadline) break;
     }
 
     // Not one complete line within maxBytes, and the file goes on: the line is
     // longer than the budget and could never be read. Skip it.
-    if (result.nextOffset === start && end === start + maxBytes && end < size) {
+    if (result.nextOffset === start && pos === start + maxBytes && end < size) {
       result.malformed++;
       result.nextOffset = end;
     }
@@ -70,18 +75,35 @@ export async function readJsonlFrom(
 }
 
 // Compressed sessions (Codex rewrites older rollouts as .jsonl.zst). The file
-// is complete, so it is streamed in full; the first `skipLines` lines were
-// read before. Uses node:zlib's zstd (Node ≥ 22.15), no extra dependency.
+// is streamed; the first `skipLines` lines were read before. With a deadline
+// it stops after a batch of ZST_BATCH_LINES new lines once the deadline has
+// passed: `totalLines` is then the lines consumed and `complete` is false.
+// Uses node:zlib's zstd (Node ≥ 22.15), no extra dependency.
+const ZST_BATCH_LINES = 1000;
+
 export async function readZstJsonl(
   file: string,
   skipLines: number,
-): Promise<{ records: unknown[]; totalLines: number; malformed: number }> {
-  const result = { records: [] as unknown[], totalLines: 0, malformed: 0 };
-  const lines = createInterface({
-    input: createReadStream(file).pipe(createZstdDecompress()),
-    crlfDelay: Infinity,
-  });
+  deadline?: number,
+): Promise<{ records: unknown[]; totalLines: number; malformed: number; complete: boolean }> {
+  const result = { records: [] as unknown[], totalLines: 0, malformed: 0, complete: true };
+  const input = createReadStream(file);
+  const decompressed = input.pipe(createZstdDecompress());
+  const lines = createInterface({ input: decompressed, crlfDelay: Infinity });
   for await (const line of lines) {
+    const fresh = result.totalLines - skipLines;
+    if (
+      fresh > 0 &&
+      fresh % ZST_BATCH_LINES === 0 &&
+      deadline !== undefined &&
+      Date.now() >= deadline
+    ) {
+      result.complete = false;
+      lines.close();
+      decompressed.destroy();
+      input.destroy();
+      break;
+    }
     result.totalLines++;
     if (result.totalLines <= skipLines || line.trim() === '') continue;
     try {

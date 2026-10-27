@@ -135,3 +135,37 @@ test('readZstJsonl reads every line of a zstd file and skips the first N', async
   expect(rest.records).toEqual([{ n: 4 }]);
   expect(rest.totalLines).toBe(5);
 });
+
+test('with a passed deadline the reader stops after one chunk but always returns progress', async () => {
+  // ~3 MiB of 1 KiB lines: more than one 1 MiB chunk.
+  const lines = Array.from({ length: 3000 }, (_, n) => line({ n, pad: 'p'.repeat(1000) }));
+  writeFileSync(file, lines.join(''));
+  const seen: number[] = [];
+  let offset = 0;
+  let runs = 0;
+  for (; runs < 20 && offset < bytes(lines.join('')); runs++) {
+    const r = await readJsonlFrom(file, offset, 50_000_000, 0); // deadline long gone
+    expect(r.records.length).toBeGreaterThan(0); // progress every run
+    seen.push(...r.records.map((x) => (x.value as { n: number }).n));
+    offset = r.nextOffset;
+  }
+  expect(runs).toBeGreaterThan(1);
+  expect(seen).toEqual(lines.map((_, n) => n)); // every line exactly once, in order
+});
+
+test('with a passed deadline the zst reader stops after a batch of lines, then continues', async () => {
+  const lines = Array.from({ length: 2500 }, (_, n) => line({ n }));
+  const zst = join(dir, 'big.jsonl.zst');
+  writeFileSync(zst, zstdCompressSync(Buffer.from(lines.join(''))));
+  const seen: number[] = [];
+  let skip = 0;
+  let runs = 0;
+  for (let complete = false; !complete && runs < 10; runs++) {
+    const r = await readZstJsonl(zst, skip, 0);
+    seen.push(...r.records.map((x) => (x as { n: number }).n));
+    skip = r.totalLines;
+    complete = r.complete;
+  }
+  expect(runs).toBe(3); // 1000 + 1000 + 500 lines
+  expect(seen).toEqual(lines.map((_, n) => n));
+});

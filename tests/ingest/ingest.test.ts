@@ -330,3 +330,54 @@ test('all four real collectors together, within the default budget', async () =>
     }
   }
 });
+
+test('each collector gets a soft deadline inside its slice', async () => {
+  let seen: number | undefined;
+  const probe: Collector = {
+    name: 'claude',
+    async isAvailable() {
+      return true;
+    },
+    async collect(c) {
+      seen = c.deadline;
+      return { events: [], pendingCursors: [], warnings: [] };
+    },
+  };
+  const started = Date.now();
+  await ingest(ctx, { budgetMs: 1000, collectors: [probe] });
+  expect(seen).toBeGreaterThan(started);
+  expect(seen).toBeLessThan(started + 1000); // before the hard limit
+});
+
+test('a collector that respects the soft deadline makes progress where a hard timeout would not', async () => {
+  // Three "files" of 200 ms each, 300 ms budget (soft deadline at 60% = 180 ms):
+  // without the soft deadline every run would start a second file, hit the hard
+  // timeout and commit nothing.
+  const done = new Set<string>();
+  const slow: Collector = {
+    name: 'claude',
+    async isAvailable() {
+      return true;
+    },
+    async collect(c) {
+      const events: WorkEvent[] = [];
+      for (const f of ['f1', 'f2', 'f3']) {
+        if (ctx.repo.getCursor('claude', f) !== null) continue;
+        if (events.length > 0 && c.deadline !== undefined && Date.now() >= c.deadline) break;
+        await sleep(200);
+        events.push(event('claude', f));
+      }
+      return {
+        events,
+        pendingCursors: events.map((e) => ({ key: e.dedupeKey, value: 'done' })),
+        warnings: [],
+      };
+    },
+  };
+  for (let run = 0; run < 3 && done.size < 3; run++) {
+    const report = await ingest(ctx, { budgetMs: 300, collectors: [slow] });
+    expect(report.perSource.claude.status).toBe('ok');
+    for (const e of ctx.repo.eventsSince(EPOCH)) done.add(e.dedupeKey);
+  }
+  expect(done).toEqual(new Set(['f1', 'f2', 'f3']));
+});
