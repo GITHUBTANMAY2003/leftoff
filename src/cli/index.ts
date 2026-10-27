@@ -1,8 +1,9 @@
 import { Command, Option } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { logError } from '../core/logger.ts';
+import { runBriefAuto } from './commands/brief-auto.ts';
 import { runHook, type HookName } from './commands/hook.ts';
-import { runInternalSummarizeCommand } from './commands/internal.ts';
+import { runInternalIngestCommand, runInternalSummarizeCommand } from './commands/internal.ts';
 import { runLoops } from './commands/loops.ts';
 import { runNote } from './commands/note.ts';
 import { runResume } from './commands/resume.ts';
@@ -90,10 +91,20 @@ program
   });
 
 program
-  .command('internal', { hidden: true })
+  .command('brief', { hidden: true })
+  .requiredOption('--auto', 'the short brief the shell hook prints on terminal open')
+  .action(async () => {
+    const out = await runBriefAuto(process.cwd());
+    // Exit now: the background ingest it may start is detached.
+    process.stdout.write(out ? out + '\n' : '', () => process.exit(0));
+  });
+
+const internal = program.command('internal', { hidden: true });
+internal
   .command('summarize')
   .requiredOption('--project <path>', 'the project to summarize')
   .action(async (o: { project: string }) => runInternalSummarizeCommand(o.project));
+internal.command('ingest').action(async () => runInternalIngestCommand());
 
 // Commands from later tasks are registered here.
 

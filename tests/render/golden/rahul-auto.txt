@@ -1,0 +1,4 @@
+Where you left off — myapp (feature/forgot-password) · last active 14h ago
+  • 1 uncommitted file
+  ✗ `python scripts/send_test_email.py` — SMTP connection refused
+Run `leftoff resume` for details

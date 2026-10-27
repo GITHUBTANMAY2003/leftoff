@@ -1,10 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { paths } from '../../src/core/paths.ts';
-import { installShim, shimStatus } from '../../src/install/shim.ts';
+import { installShim, shimStatus, stableNodePath } from '../../src/install/shim.ts';
 
 let tmp: string;
 const saved = process.env.LEFTOFF_HOME;
@@ -59,4 +68,46 @@ test('shimStatus reports works=false when the cli fails, and exists=false withou
   writeFileSync(cli, 'process.exit(3);\n');
   installShim(process.execPath, cli);
   expect(shimStatus().works).toBe(false);
+});
+
+// A bin directory holding `node` as a symlink to target.
+function binWithNode(name: string, target: string): string {
+  const dir = join(tmp, name);
+  mkdirSync(dir, { recursive: true });
+  symlinkSync(target, join(dir, 'node'));
+  return dir;
+}
+
+test('stableNodePath prefers an unversioned node on PATH that is the same binary', () => {
+  const stable = binWithNode('brew-bin', process.execPath);
+  expect(stableNodePath(process.execPath, `/nonexistent:${stable}:/usr/bin`)).toBe(
+    join(stable, 'node'),
+  );
+});
+
+test('stableNodePath falls back to execPath when PATH has no node or a different one', () => {
+  expect(stableNodePath(process.execPath, '/nonexistent')).toBe(process.execPath);
+  const other = join(tmp, 'other-node');
+  writeFileSync(other, '#!/bin/sh\n');
+  expect(stableNodePath(process.execPath, binWithNode('other-bin', other))).toBe(process.execPath);
+});
+
+test('stableNodePath skips fnm per-shell links, which disappear when that shell exits', () => {
+  const fnm = binWithNode('fnm_multishells/1234_5678/bin', process.execPath);
+  expect(stableNodePath(process.execPath, fnm)).toBe(process.execPath);
+});
+
+test('the shim exits 0 silently when its node or cli is gone (hooks never error)', () => {
+  const cli = fakeCli('cli.mjs', 'v');
+  const node = join(binWithNode('gone-bin', process.execPath), 'node');
+  installShim(node, cli);
+  expect(spawnSync(paths().shim, ['x'], { encoding: 'utf8' }).stdout).toBe('v x\n');
+  expect(shimStatus()).toMatchObject({ nodePath: node, cliPath: cli, works: true });
+  rmSync(node);
+  const noNode = spawnSync(paths().shim, ['x'], { encoding: 'utf8' });
+  expect([noNode.status, noNode.stdout, noNode.stderr]).toEqual([0, '', '']);
+  expect(shimStatus().works).toBe(false); // doctor: "shim broken, run leftoff setup"
+  installShim(process.execPath, join(tmp, 'missing-cli.mjs'));
+  const noCli = spawnSync(paths().shim, ['x'], { encoding: 'utf8' });
+  expect([noCli.status, noCli.stdout, noCli.stderr]).toEqual([0, '', '']);
 });

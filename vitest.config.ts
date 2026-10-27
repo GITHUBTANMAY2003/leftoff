@@ -8,6 +8,9 @@ export default defineConfig({
           name: 'unit',
           include: ['tests/**/*.test.ts'],
           exclude: ['tests/e2e/**'],
+          // Many tests start real processes (shells, node, git); with the
+          // whole suite running in parallel, 5 s is too tight (Task 14).
+          testTimeout: 20_000,
         },
       },
       {

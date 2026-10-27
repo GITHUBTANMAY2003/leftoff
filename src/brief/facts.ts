@@ -103,22 +103,25 @@ function quote(text: string | null): string | null {
   return t;
 }
 
+// Claims are read sentence by sentence (owner decision after Task 14): a
+// question or a sentence that offers options is never a claim.
+const QUESTION = /\?["')\]]*$/;
+const OFFER = /\b(or|should I|shall I|want me to)\b/i;
+function claimSentences(text: string): string[] {
+  return text
+    .split('\n')
+    .flatMap((line) => (quote(line) ?? '').split(/(?<=[.!?])\s+/))
+    .filter((s) => CLAIM.test(s) && !QUESTION.test(s) && !OFFER.test(s));
+}
+
 // The claim as shown (owner decision after Task 13): the sentence with the
 // done-word, at most about 100 characters, cut at word boundaries around it.
 const MAX_CLAIM_CHARS = 100;
-function claimSentence(text: string): string {
-  const t = quote(text) ?? '';
-  const m = CLAIM.exec(t);
-  if (!m) return t;
-  const ends = [...t.slice(0, m.index).matchAll(/[.!?]\s/g)];
-  const start = ends.length > 0 ? (ends.at(-1)?.index ?? -2) + 2 : 0;
-  const after = t.slice(m.index).search(/[.!?](\s|$)/);
-  const end = after === -1 ? t.length : m.index + after + 1;
-  const sentence = t.slice(start, end);
-  if ([...sentence].length <= MAX_CLAIM_CHARS) return sentence;
+function claimSentence(sentence: string): string {
+  const m = CLAIM.exec(sentence);
+  if (!m || [...sentence].length <= MAX_CLAIM_CHARS) return sentence;
   // A window around the done-word, narrowed to whole words.
-  const at = m.index - start;
-  let from = Math.max(0, at - 45);
+  let from = Math.max(0, m.index - 45);
   let to = Math.min(sentence.length, from + MAX_CLAIM_CHARS - 2);
   if (from > 0) from = sentence.indexOf(' ', from) + 1;
   if (to < sentence.length) to = sentence.lastIndexOf(' ', to);
@@ -255,9 +258,12 @@ export function detectClaimedDone(
   uncommittedCount: number,
 ): ClaimedDone | null {
   let claimIndex = -1;
+  let sentences: string[] = [];
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i] as WorkEvent;
-    if (e.kind === 'agent_message' && CLAIM.test(e.summary) && !NEGATION.test(e.summary)) {
+    if (e.kind !== 'agent_message' || NEGATION.test(e.summary)) continue;
+    sentences = claimSentences(e.summary);
+    if (sentences.length > 0) {
       claimIndex = i;
       break;
     }
@@ -278,13 +284,13 @@ export function detectClaimedDone(
     if (sameSession || later) contradictions.push(contradictionOf(problem));
   }
   const committedSince = events.slice(claimIndex + 1).some((e) => e.kind === 'commit');
-  if (COMMIT_CLAIM.test(claim.summary) && uncommittedCount > 0 && !committedSince) {
+  if (sentences.some((t) => COMMIT_CLAIM.test(t)) && uncommittedCount > 0 && !committedSince) {
     contradictions.push(`${uncommittedCount} uncommitted file${uncommittedCount === 1 ? '' : 's'}`);
   }
   if (contradictions.length === 0) return null;
   return {
     source: claim.source,
-    message: claimSentence(claim.summary),
+    message: claimSentence(sentences[0] as string),
     at: claim.ts,
     contradictions,
   };

@@ -415,4 +415,4 @@ The plan's 11 named tests are all present (hook ×6, manifests, hook command, sh
 
 ## 10. Commit
 
-To be filled in by Task 14's commit (B11). The commit message is `feat(claude): plugin hooks inject brief and record sessions`.
+`1067a0e feat(claude): plugin hooks inject brief and record sessions` (hash filled in by Task 14's commit, B11).

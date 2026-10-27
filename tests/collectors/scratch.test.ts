@@ -26,6 +26,17 @@ test.each([
   ['python scripts/send_test_email.py', false],
   ['grep -q foo a.txt', false], // a lone grep is a probe, not scratch
   ['echo "a | b"', false], // the pipe is inside quotes
+  // A chain (&&, ;) of probes, scratch and cd steps only (owner decision after Task 14).
+  ['cd /x && ls src && cat a.ts', true],
+  ['ls src; grep -n foo a.ts | head -3', true],
+  ['cat a.ts && python3 -c "print(1)"', true],
+  ['git show HEAD:a.ts; git diff --stat', true],
+  ['ls src && npm run build', false], // a project command in the chain
+  ['git status && git diff --stat | sed -n 1,5p', false], // git status is not a probe
+  ['cd /x && npm test', false],
+  ['ls src', false], // a lone probe stays a probe (exit codes 1 and 2 only)
+  ['cd /x && cd y', false], // only cd steps
+  ['ls "a && b"', false], // the && is inside quotes
 ])('isScratchCommand(%j) → %s', (command, expected) => {
   expect(isScratchCommand(command)).toBe(expected);
 });

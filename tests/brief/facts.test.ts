@@ -255,6 +255,44 @@ test('claimed done quotes the sentence with the done-word, cut at word boundarie
   expect(quoted).toMatch(/^…(\w+ )+.*done.*( \w+)+…$/);
 });
 
+test('questions and offers are never done-claims; a claim sentence elsewhere in the message still counts', () => {
+  const claim = (message: string) =>
+    detectClaimedDone(
+      timeline(fail('npm test', '1 failed'), ['agent_message', message, {}]),
+      findOpenProblems(timeline(fail('npm test', '1 failed'))),
+      0,
+    )?.message ?? null;
+  expect(claim('Is the parser fixed now?')).toBeNull();
+  expect(claim('Should the loose end be fixed in this commit or left for Task 18?')).toBeNull();
+  expect(claim('It can be fixed in this commit or left for later.')).toBeNull();
+  expect(claim('Should I mark this done.')).toBeNull();
+  expect(claim('Want me to say it is finished!')).toBeNull();
+  expect(claim('Shall I commit and say it is done.')).toBeNull();
+  expect(claim('Do you want me to push this as done')).toBeNull();
+  // The question is skipped, the plain claim after it is quoted.
+  expect(claim('Was it the cache? Fixed the cache key.')).toBe('Fixed the cache key.');
+  // An earlier real claim is not hidden by a newer question.
+  expect(
+    detectClaimedDone(
+      timeline(
+        fail('npm test', '1 failed'),
+        ['agent_message', 'All tests pass.', {}],
+        ['agent_message', 'Should I push it or wait until it is fixed?', {}],
+      ),
+      findOpenProblems(timeline(fail('npm test', '1 failed'))),
+      0,
+    )?.message,
+  ).toBe('All tests pass.');
+  // A commit word inside an offer does not make the claim a commit claim (R-D1).
+  expect(
+    detectClaimedDone(
+      timeline(['agent_message', 'Done. Want me to check that it merged cleanly?', {}]),
+      [],
+      2,
+    ),
+  ).toBeNull();
+});
+
 test('displayed texts are one line: multi-line attempts show their first line + " …"', () => {
   const [p] = findOpenProblems(
     timeline(fail('npm test', '1 failed'), ok("python3 - <<'EOF'\nprint(1)\nEOF"), [

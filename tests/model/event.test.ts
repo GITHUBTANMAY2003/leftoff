@@ -63,6 +63,29 @@ test('makeEvent shrinks data to ≤ 4096 bytes by dropping the largest string fi
   expect(Buffer.byteLength(JSON.stringify(e.data))).toBeLessThanOrEqual(4096);
 });
 
+test('makeEvent keeps the command when shrinking, cut to 1000 characters (found on real data, Task 14)', () => {
+  // Without its command a failure can't be classified (scratch, probe) or resolved.
+  const command = `python3 - <<'EOF'\n${'x = 1\n'.repeat(1000)}EOF`;
+  const e = makeEvent({
+    ...base,
+    summary: 's',
+    data: { command, output: 'o'.repeat(2500) },
+  });
+  expect(typeof e.data.command).toBe('string');
+  expect(Array.from(e.data.command as string)).toHaveLength(1000);
+  expect((e.data.command as string).startsWith("python3 - <<'EOF'\nx = 1")).toBe(true);
+  expect((e.data.command as string).endsWith('…')).toBe(true);
+  expect(e.data.output).toBe('o'.repeat(2500));
+  expect(e.data.truncated).toBe(true);
+  // A short command stays whole; the output is dropped instead.
+  const small = makeEvent({
+    ...base,
+    summary: 's',
+    data: { command: 'npm test', output: 'o'.repeat(5000) },
+  });
+  expect(small.data).toEqual({ command: 'npm test', truncated: true });
+});
+
 test('makeEvent measures data in bytes (multi-byte characters count more)', () => {
   // 1500 × "é" = 3000 bytes in UTF-8 but only 1500 UTF-16 units.
   const e = makeEvent({

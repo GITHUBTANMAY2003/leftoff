@@ -1,5 +1,6 @@
 import { basename } from 'node:path';
-import { normalizeCommand, pipelineHead } from '../model/event.ts';
+import { chainSteps, normalizeCommand, pipelineHead } from '../model/event.ts';
+import { isProbeCommand } from './probes.ts';
 
 // Scratch work (owner decision after Task 13): one-off commands an agent runs
 // to look around or to try something, not the project's own commands. Their
@@ -8,7 +9,8 @@ import { normalizeCommand, pipelineHead } from '../model/event.ts';
 //
 // Scratch is: a multi-line command; a heredoc (`<<`); inline code run by an
 // interpreter (`python -c`, `node -e`, `bash -c`, …); a pipeline whose first
-// program is a text tool. To change what counts, edit the lists below and add a
+// program is a text tool; a `&&` / `;` chain whose steps are all probes, scratch
+// or `cd` (owner decision after Task 14). To change what counts, edit the lists below and add a
 // case to tests/collectors/scratch.test.ts.
 
 const INLINE_CODE: Record<string, string[]> = {
@@ -56,5 +58,12 @@ export function isScratchCommand(raw: string): boolean {
   const [program = '', flag = ''] = normalizeCommand(command).split(' ');
   if (INLINE_CODE[basename(program)]?.includes(flag)) return true;
   const head = pipelineHead(command);
-  return head !== null && TEXT_TOOLS.has(basename(head));
+  if (head !== null && TEXT_TOOLS.has(basename(head))) return true;
+  const steps = chainSteps(command);
+  const isCd = (step: string) => /^cd(\s|$)/.test(step);
+  return (
+    steps.length > 1 &&
+    !steps.every(isCd) &&
+    steps.every((step) => isCd(step) || isProbeCommand(step) || isScratchCommand(step))
+  );
 }

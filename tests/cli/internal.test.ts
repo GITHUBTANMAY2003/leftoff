@@ -44,3 +44,16 @@ test('`leftoff internal summarize --project` runs silently, exits 0, and is hidd
   db.close();
   expect(run(['--help']).stdout).not.toMatch(/internal/);
 });
+
+test('`leftoff internal ingest` runs silently, exits 0, and stores the ingest report', () => {
+  const cli = resolve(import.meta.dirname, '../../src/cli/index.ts');
+  const r = spawnSync(process.execPath, [cli, 'internal', 'ingest'], {
+    cwd: tmp,
+    env: process.env,
+    encoding: 'utf8',
+  });
+  expect([r.status, r.stdout, r.stderr]).toEqual([0, '', '']);
+  const db = openDb();
+  expect(createRepo(db).getCursor('ingest', 'last_report')).not.toBeNull();
+  db.close();
+});

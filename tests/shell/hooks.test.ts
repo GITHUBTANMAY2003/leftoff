@@ -203,7 +203,7 @@ describe('zsh hook details', () => {
       ]),
       env(),
     );
-    expect(r.stdout).toMatch(/^hooks:__leftoff_precmd$/m);
+    expect(r.stdout).toMatch(/^hooks:__leftoff_precmd __leftoff_auto$/m);
     expect(readLog().filter((l) => l.command === 'echo once')).toHaveLength(1);
   });
 });
@@ -250,7 +250,7 @@ describe('bash hook details', () => {
       session('bash', [`source ${SCRIPTS}/leftoff.bash`, 'echo "pc:$PROMPT_COMMAND"', 'echo once']),
       env(),
     );
-    expect(r.stdout).toMatch(/^pc:__leftoff_prompt$/m);
+    expect(r.stdout).toMatch(/^pc:__leftoff_prompt;__leftoff_auto$/m);
     expect(readLog().filter((l) => l.command === 'echo once')).toHaveLength(1);
   });
 });

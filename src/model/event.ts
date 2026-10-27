@@ -65,15 +65,20 @@ const byteSize = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
 
 // Drops the largest top-level string fields until the JSON fits, marking the
 // result { truncated: true }; if that is not enough, keeps only the marker.
+// The command is cut to MAX_COMMAND_CHARS and dropped last: without it a
+// failure can't be classified or resolved (found on real data, Task 14).
+const MAX_COMMAND_CHARS = 1000;
 function shrink(data: Record<string, unknown>): Record<string, unknown> {
   if (byteSize(data) <= MAX_DATA_BYTES) return data;
   const out: Record<string, unknown> = { ...data, truncated: true };
+  if (typeof out.command === 'string') out.command = truncate(out.command, MAX_COMMAND_CHARS);
   while (byteSize(out) > MAX_DATA_BYTES) {
     let largest: string | null = null;
     for (const [k, v] of Object.entries(out)) {
-      if (typeof v !== 'string') continue;
+      if (typeof v !== 'string' || k === 'command') continue;
       if (largest === null || byteSize(v) > byteSize(out[largest])) largest = k;
     }
+    if (largest === null && typeof out.command === 'string') largest = 'command';
     if (largest === null) return { truncated: true };
     delete out[largest];
   }
@@ -307,6 +312,21 @@ export function withoutFilters(cmd: string): string {
   }
   const last = tokens.at(-1);
   return last ? s.slice(0, last.end) : s;
+}
+
+// The steps of a `&&` / `;` chain, split outside quotes: `cd x && ls; cat a`
+// → ['cd x', 'ls', 'cat a']. A command without a chain is one step.
+export function chainSteps(cmd: string): string[] {
+  const s = cmd.replace(/\s+/g, ' ').trim();
+  const steps: string[] = [];
+  let from = 0;
+  for (const t of tokenize(s)) {
+    if (!t.op || (t.text !== '&&' && t.text !== ';')) continue;
+    steps.push(s.slice(from, t.start).trim());
+    from = t.end;
+  }
+  steps.push(s.slice(from).trim());
+  return steps.filter((step) => step !== '');
 }
 
 // The first program of a pipeline (after cd steps and env prefixes), or null
