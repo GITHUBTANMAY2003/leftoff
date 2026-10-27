@@ -33,6 +33,9 @@ export interface Repo {
   pruneOlderThan(iso: string): number;
   deleteProject(root: string): void;
   deleteAll(): void;
+  // Runs fn in one transaction (nested calls become savepoints). Ingest uses it
+  // to commit a collector's events and cursors together (plan Task 8).
+  transaction<T>(fn: () => T): T;
 }
 
 interface EventRow {
@@ -190,5 +193,6 @@ export function createRepo(db: Database): Repo {
     pruneOlderThan: (iso) => prune.run(iso).changes,
     deleteProject: (root) => deleteProject(root),
     deleteAll: () => deleteAll(),
+    transaction: (fn) => db.transaction(fn)(),
   };
 }

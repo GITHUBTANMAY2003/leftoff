@@ -427,4 +427,33 @@ All matched files use Prettier code style!
 
 ## 10. Commit
 
-Not committed yet (waiting for your fixture approval). When approved: `feat(codex): codex collector with plain and zstd rollouts`; the hash will be backfilled in Task 8's commit.
+Commit `195d6cb`, message `feat(codex): codex collector with plain and zstd rollouts`. The owner reviewed and approved the fixture before the commit.
+
+```
+$ git show --stat --format='%h %s' 195d6cb
+195d6cb feat(codex): codex collector with plain and zstd rollouts
+
+ docs/PROGRESS.md                             |   6 +-
+ docs/leftoff-implementation-plan.md          |  10 +-
+ docs/reports/task-06.md                      |  29 +-
+ docs/reports/task-07.md                      | 430 +++++++++++++++++++++++++++
+ package.json                                 |   2 +-
+ src/collectors/claude.ts                     |   4 +-
+ src/collectors/codex.ts                      | 285 ++++++++++++++++++
+ src/collectors/jsonl-reader.ts               |  27 ++
+ src/collectors/test-failures.ts              |  24 ++
+ tests/collectors/claude.test.ts              |  13 +
+ tests/collectors/codex.test.ts               | 380 +++++++++++++++++++++++
+ tests/collectors/jsonl-reader.test.ts        |  16 +-
+ tests/collectors/test-failures.test.ts       |  47 +++
+ tests/fixtures/codex/README.md               |  75 +++++
+ tests/fixtures/codex/session-basic.jsonl     | 144 +++++++++
+ tests/fixtures/codex/session-basic.jsonl.zst | Bin 0 -> 10227 bytes
+ tests/fixtures/codex/session-malformed.jsonl | 148 +++++++++
+ tests/fixtures/codex/session-partial.jsonl   | 144 +++++++++
+ 18 files changed, 1772 insertions(+), 12 deletions(-)
+```
+
+Owner's answers:
+- Node >= 22.15 approved; update the Global Constraints line (done). If CI's Node 22 jobs fail on zstd, check that first.
+- `thread_history_1.sqlite` risk: add a doctor warning in Task 15. If Codex shows recent activity but no new rollout files for 7+ days, warn that Codex may have changed its storage format (added to the plan in Task 8's commit).

@@ -214,3 +214,28 @@ test('deleteAll removes events, briefs, shown markers and locks, but keeps curso
   expect(repo.acquireLock('l', 'B', 120_000)).toBe(true);
   expect(repo.getCursor('claude', '/f.jsonl')).toBe('123');
 });
+
+test('transaction commits everything inside it together', () => {
+  repo.transaction(() => {
+    repo.insertEvents([ev('a')]);
+    repo.setCursor('shell', 'k', '1');
+  });
+  expect(repo.eventsSince(EPOCH)).toHaveLength(1);
+  expect(repo.getCursor('shell', 'k')).toBe('1');
+});
+
+test('transaction rolls back events and cursors when it throws', () => {
+  expect(() =>
+    repo.transaction(() => {
+      repo.insertEvents([ev('a')]);
+      repo.setCursor('shell', 'k', '1');
+      throw new Error('crash between insert and cursor');
+    }),
+  ).toThrow('crash');
+  expect(repo.eventsSince(EPOCH)).toEqual([]);
+  expect(repo.getCursor('shell', 'k')).toBeNull();
+});
+
+test('transaction returns the value of its function', () => {
+  expect(repo.transaction(() => repo.insertEvents([ev('a'), ev('b')]))).toBe(2);
+});
