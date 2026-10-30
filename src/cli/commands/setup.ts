@@ -66,9 +66,17 @@ const API_KEYS: Partial<Record<PolishProviderName, string>> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
 };
-const PRIVACY =
-  'off: nothing leaves your machine · claude-cli, codex-cli: the brief facts go to that tool and its service · ' +
-  'ollama: stays on this machine · anthropic, openai: sent to their API with your key';
+// What each choice sends where (Task 15b: a list, one line per option).
+const PRIVACY: Record<(typeof POLISH_CHOICES)[number], string> = {
+  off: 'nothing leaves your machine',
+  'claude-cli': 'the brief facts go to Claude Code and Anthropic, with your Claude login',
+  'codex-cli': 'the brief facts go to Codex and OpenAI, with your Codex login',
+  ollama: 'a local model: nothing leaves your machine',
+  anthropic: 'the brief facts go to the Anthropic API, with your ANTHROPIC_API_KEY',
+  openai: 'the brief facts go to the OpenAI API, with your OPENAI_API_KEY',
+};
+const RECOMMEND_CLAUDE =
+  'Use Claude Code for AI summaries (recommended)? The brief facts go to Claude Code and Anthropic, with your Claude login.';
 
 export function detectSetupEnv(): SetupEnv {
   return {
@@ -108,8 +116,17 @@ type Config = ReturnType<typeof loadConfig>;
 async function choosePolish(io: Prompter, env: SetupEnv, config: Config): Promise<PolishSetting> {
   const current = config.polish.provider;
   const def = POLISH_CHOICES.find((c) => c === current) ?? config.polish.enabled[0] ?? 'off';
-  io.say(PRIVACY);
-  const choice = await io.choose('AI summaries (polish)?', [...POLISH_CHOICES], def);
+  // With Claude Code installed, claude-cli is recommended: Yes by default
+  // unless another provider was chosen before, and always asked (Task 15b).
+  const recommend = env.hasClaude && (def === 'off' || def === 'claude-cli');
+  let choice: (typeof POLISH_CHOICES)[number];
+  if (recommend && (await io.confirm(RECOMMEND_CLAUDE, true))) {
+    choice = 'claude-cli';
+  } else {
+    io.say('AI summaries turn the brief into a short paragraph. Options:');
+    for (const option of POLISH_CHOICES) io.say(`  ${option.padEnd(10)}  ${PRIVACY[option]}`);
+    choice = await io.choose('Which one?', [...POLISH_CHOICES], recommend ? 'off' : def);
+  }
   const off = (reason?: string): PolishSetting => {
     if (reason) io.say(reason);
     config.polish.provider = 'off';
@@ -209,7 +226,7 @@ export async function runSetup(io: Prompter, env: SetupEnv): Promise<SetupResult
   const polish = await choosePolish(io, env, config);
   saveConfig(config);
 
-  // 6. first catch-up ingest
+  // 6. first catch-up ingest, reported in plain words (Task 15b)
   let progress: string | null = null;
   const db = openDb();
   try {
@@ -218,7 +235,15 @@ export async function runSetup(io: Prompter, env: SetupEnv): Promise<SetupResult
       { budgetMs: CATCH_UP_BUDGET_MS },
     );
     const n = (name: keyof IngestReport['perSource']) => report.perSource[name].inserted;
-    progress = `Read ${plural(n('claude'), 'Claude event')}, ${plural(n('codex'), 'Codex event')}, ${plural(n('shell'), 'command')}, ${plural(n('git'), 'commit')}`;
+    const parts = [
+      n('claude') > 0
+        ? `${n('claude')} ${n('claude') === 1 ? 'thing' : 'things'} from Claude Code`
+        : null,
+      n('codex') > 0 ? `${n('codex')} from Codex` : null,
+      n('shell') > 0 ? plural(n('shell'), 'terminal command') : null,
+      n('git') > 0 ? plural(n('git'), 'commit') : null,
+    ].filter((x) => x !== null);
+    progress = `Caught up: ${parts.length > 0 ? parts.join(', ') : 'nothing to read yet'}`;
     io.say(progress);
   } catch (err) {
     logError('setup', err);
@@ -227,7 +252,28 @@ export async function runSetup(io: Prompter, env: SetupEnv): Promise<SetupResult
     db.close();
   }
 
-  // 7. summary
-  io.say('Open a new terminal to start.');
+  // 7. what changed, what to try, how to undo (Task 15b)
+  const installed = [
+    ...Object.entries(shellHooks)
+      .filter(([, state]) => state !== 'skipped')
+      .map(
+        ([shell]) =>
+          `the shell hook in ~/${relative(env.home, rcPathFor(shell as ShellName, env.home))}`,
+      ),
+    ...(plugin === 'installed' || plugin === 'already'
+      ? ['the leftoff plugin in Claude Code']
+      : []),
+    ...(polish !== 'off' ? [`AI summaries with ${polish}`] : []),
+    `your data folder, ${paths().home}`,
+  ];
+  io.say('Setup finished. Installed:');
+  for (const item of installed) io.say(`  • ${item}`);
+  io.say('Try next:');
+  io.say('  • open a new terminal in a project: a short brief appears when you have been away');
+  io.say('  • leftoff resume: where you left off in this project');
+  io.say('  • leftoff: loose ends across all your projects');
+  io.say(
+    'To undo: run `leftoff uninstall` (it removes the hooks and asks before deleting any data)',
+  );
   return { shellHooks, plugin, polish, progress };
 }

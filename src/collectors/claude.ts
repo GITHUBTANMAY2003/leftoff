@@ -72,6 +72,15 @@ const firstLine = (text: string) =>
     .find((l) => l.trim() !== '')
     ?.trim() ?? '';
 
+// The summary keeps a long message's end (where a question would be); its
+// start, where agents say what they did, goes to data.head (Task 15b).
+function headOf(text: string): { head?: string } {
+  const chars = Array.from(text);
+  return chars.length <= AGENT_MESSAGE_CHARS
+    ? {}
+    : { head: chars.slice(0, AGENT_MESSAGE_CHARS - 1).join('') + '…' };
+}
+
 function lastChars(text: string, max: number): string {
   const chars = Array.from(text);
   return chars.length <= max ? text : '…' + chars.slice(-(max - 1)).join('');
@@ -154,21 +163,26 @@ export function parseClaudeRecord(
   if (Number.isNaN(ts.getTime())) return [];
   const root = resolveProject(rec.cwd);
   const drafts: Draft[] = [];
+  // A subagent's records share the session: its prompt (written by the main
+  // agent) and its replies are not your conversation, but the commands and
+  // edits it runs are real work (Task 15b).
+  const subagent = rec.isSidechain === true;
   const blocks = Array.isArray(message.content) ? message.content.filter(isObject) : [];
 
   if (rec.type === 'user') {
     for (const block of blocks.filter((b) => b.type === 'tool_result'))
       drafts.push(...resultDrafts(block, tools, root));
     const prompt = textOf(message.content).trim();
-    if (prompt !== '' && !NOT_A_PROMPT.test(prompt))
+    if (!subagent && prompt !== '' && !NOT_A_PROMPT.test(prompt))
       drafts.unshift({ kind: 'user_prompt', summary: prompt, data: {} });
   } else {
     for (const block of blocks) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text.trim() !== '') {
+        if (subagent) continue;
         drafts.push({
           kind: 'agent_message',
           summary: lastChars(block.text.trim(), AGENT_MESSAGE_CHARS),
-          data: {},
+          data: headOf(block.text.trim()),
         });
       } else if (
         block.type === 'tool_use' &&

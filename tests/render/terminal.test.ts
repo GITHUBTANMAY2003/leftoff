@@ -220,7 +220,7 @@ test('with color, the text is the same once the ANSI codes are removed', () => {
 
 test('open problems keep the error visible: the long command is shortened from the middle', () => {
   const cmd =
-    'cargo test -p looplint_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
+    'cargo test -p payments_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
   const f: BriefFacts = {
     ...rahulFacts(),
     openProblems: [
@@ -257,4 +257,27 @@ test('open problems keep the error visible: the long command is shortened from t
     .find((l) => l.startsWith('  ✗')) as string;
   expect(claimedLine).toMatch(/` — test result: FAILED.*\(still failing\)$/);
   expect([...claimedLine].length).toBeLessThanOrEqual(100);
+});
+
+test('--details shows at most 3 open problems, newest first, then "+N more" (Task 15b)', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [1, 2, 3, 4, 5].map((n) => ({
+      error: `error ${n}`,
+      command: `make step${n}`,
+      isTest: false,
+      source: 'shell' as const,
+      firstSeen: '2026-10-20T18:00:00.000Z',
+      attempts: [],
+    })),
+  };
+  const lines = renderTerminal(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  const at = lines.indexOf('Open problems');
+  expect(lines.slice(at + 1, at + 6)).toEqual([
+    '  ✗ `make step1` — error 1',
+    '  ✗ `make step2` — error 2',
+    '  ✗ `make step3` — error 3',
+    '  • +2 more',
+    '',
+  ]);
 });

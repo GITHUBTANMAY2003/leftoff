@@ -514,3 +514,77 @@ test('probe failures are marked: ls /nope and the missing Read; the test run and
     ['npx --no-install eslint . 2>&1', false],
   ]);
 });
+
+test('a long agent message keeps its end as the summary and its start in data.head (Task 15b)', () => {
+  const text = `Task 3 is committed. ${'More detail follows here. '.repeat(30)}Should I push?`;
+  const [e] = parseClaudeRecord(
+    {
+      type: 'assistant',
+      cwd: '/',
+      timestamp: '2026-10-26T15:00:00.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    },
+    '/f.jsonl',
+    10,
+  );
+  expect(e?.summary.endsWith('Should I push?')).toBe(true);
+  expect(e?.data.head).toBe(text.slice(0, 299) + '…');
+  const [short] = parseClaudeRecord(
+    {
+      type: 'assistant',
+      cwd: '/',
+      timestamp: '2026-10-26T15:00:00.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
+    },
+    '/f.jsonl',
+    20,
+  );
+  expect(short?.data).toEqual({}); // short messages: the summary is the whole text
+});
+
+test("a subagent's prompt and replies are not yours; its commands and edits still count (Task 15b)", () => {
+  const base = { cwd: '/', timestamp: '2026-10-26T15:00:00.000Z', isSidechain: true };
+  const prompt = parseClaudeRecord(
+    { ...base, type: 'user', message: { role: 'user', content: 'You are reviewing one task.' } },
+    '/f.jsonl',
+    10,
+  );
+  const reply = parseClaudeRecord(
+    {
+      ...base,
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Verdict: fine.' }] },
+    },
+    '/f.jsonl',
+    20,
+  );
+  expect([...prompt, ...reply]).toEqual([]);
+  const tools = new Map();
+  parseClaudeRecord(
+    {
+      ...base,
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm test' } }],
+      },
+    },
+    '/f.jsonl',
+    30,
+    tools,
+  );
+  const result = parseClaudeRecord(
+    {
+      ...base,
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'tu1', content: '1 failed', is_error: true }],
+      },
+    },
+    '/f.jsonl',
+    40,
+    tools,
+  );
+  expect(result.map((e) => e.kind)).toContain('command_failed');
+});

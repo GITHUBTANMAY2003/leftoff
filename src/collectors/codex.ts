@@ -56,6 +56,15 @@ const firstLine = (text: string) =>
     .find((l) => l.trim() !== '')
     ?.trim() ?? '';
 
+// The summary keeps a long message's end (where a question would be); its
+// start, where agents say what they did, goes to data.head (Task 15b).
+function headOf(text: string): { head?: string } {
+  const chars = Array.from(text);
+  return chars.length <= AGENT_MESSAGE_CHARS
+    ? {}
+    : { head: chars.slice(0, AGENT_MESSAGE_CHARS - 1).join('') + '…' };
+}
+
 function lastChars(text: string, max: number): string {
   const chars = Array.from(text);
   return chars.length <= max ? text : '…' + chars.slice(-(max - 1)).join('');
@@ -104,7 +113,11 @@ function itemDrafts(item: Record<string, unknown>, root: string): Draft[] {
       if (text === '') return [];
       const phase = typeof item.phase === 'string' ? item.phase : null;
       return [
-        { kind: 'agent_message', summary: lastChars(text, AGENT_MESSAGE_CHARS), data: { phase } },
+        {
+          kind: 'agent_message',
+          summary: lastChars(text, AGENT_MESSAGE_CHARS),
+          data: { phase, ...headOf(text) },
+        },
       ];
     }
     case 'CommandExecution': {

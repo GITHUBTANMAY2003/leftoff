@@ -1,5 +1,6 @@
 import { sep } from 'node:path';
 import { buildFacts } from '../../brief/facts.ts';
+import { factsHash } from '../../brief/hash.ts';
 import { readWorkingState } from '../../collectors/git.ts';
 import { compileIgnore } from '../../collectors/ignore.ts';
 import { loadConfig, type Config } from '../../core/config.ts';
@@ -63,7 +64,10 @@ export async function runBriefAuto(cwd: string, deps: BriefAutoDeps = {}): Promi
       const working = (deps.readWorking ?? readWorkingState)(root);
       const facts = buildFacts(root, { repo, config, report: null, working, now });
       const color = !process.env.NO_COLOR && Boolean(process.stdout.isTTY);
-      const out = renderAutoBrief(facts, { color, now });
+      // A polished summary is shown first while its facts still match (Task 15b).
+      const cached = repo.getBrief(root);
+      const polished = cached && cached.factsHash === factsHash(facts) ? cached.polished : null;
+      const out = renderAutoBrief(facts, { color, now, polished });
       // Too slow: say nothing, and leave the brief due for the next prompt.
       if (Date.now() - started > BUDGET_MS) return '';
       repo.markBriefShown(root, repo.lastActivity(root) as string);

@@ -2,6 +2,7 @@ import { problemText, type BriefFacts } from '../brief/facts.ts';
 import { relativeAgo } from '../core/time.ts';
 import { splitProblems } from './problems.ts';
 import { capItems, clip } from './text.ts';
+import { narrativeLines } from './narrative.ts';
 import { sourcesLine } from './terminal.ts';
 
 // `leftoff resume --md`, and the context handed to new Claude Code sessions.
@@ -71,6 +72,11 @@ const LIST_SHAPES: { items: number; chars: number }[] = [
   { items: 3, chars: 80 },
 ];
 
+// At most this many open problems, newest first (Task 15b).
+const MAX_PROBLEMS = 3;
+
+// The narrative brief (Task 15b), then what an agent needs to act on it: the
+// open problems with what was already tried, and the uncommitted files.
 function contextBody(
   f: BriefFacts,
   polished: string | null,
@@ -78,37 +84,22 @@ function contextBody(
   shape: { items: number; chars: number },
 ): string[] {
   const cut = (text: string) => clip(text, shape.chars);
-  const where = [
-    f.project.name,
-    f.branch ? `branch ${f.branch}` : null,
-    f.lastActiveAt ? `last active ${relativeAgo(f.lastActiveAt, now)}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const out: string[] = [`Project: ${where}`];
-  if (polished) out.push('', polished);
-  if (f.lastIntent) out.push('', `Last request: ${f.lastIntent}`);
-  const list = (title: string, items: string[]) => {
-    if (items.length > 0)
-      out.push('', title, ...capItems(items, shape.items).map((item) => `- ${item}`));
+  const out = narrativeLines(f, polished, { now, width: null, maxChars: shape.chars });
+  const list = (title: string, items: string[], max = shape.items) => {
+    if (items.length > 0) out.push('', title, ...capItems(items, max).map((item) => `- ${item}`));
   };
-  if (f.claimedDone) {
-    list(`The agent said "${f.claimedDone.message}", but:`, f.claimedDone.contradictions.map(cut));
-  }
-  list('Done:', f.done.map(cut));
-  list(
-    'Uncommitted changes:',
-    f.unfinished.files.map((file) => cut(`${file.path} (${file.status})`)),
-  );
   list(
     'Open problems (unresolved):',
     f.openProblems.map(
       (o) =>
         `${cut(problemText(o))}${o.attempts.length > 0 ? `\n  Already tried (did not fix it): ${cut(o.attempts.join('; '))}` : ''}`,
     ),
+    Math.min(MAX_PROBLEMS, shape.items),
   );
-  list('Notes from the developer:', f.notes.map(cut));
-  if (f.nextStep) out.push('', `Suggested next step: ${f.nextStep}`);
+  list(
+    'Uncommitted changes:',
+    f.unfinished.files.map((file) => cut(`${file.path} (${file.status})`)),
+  );
   return out;
 }
 

@@ -1,5 +1,5 @@
 import { readWorkingState } from '../../collectors/git.ts';
-import { buildLooseEnds } from '../../brief/loose-ends.ts';
+import { buildLooseEnds, type ProjectFilter } from '../../brief/loose-ends.ts';
 import { loadConfig } from '../../core/config.ts';
 import { logError } from '../../core/logger.ts';
 import { ingest } from '../../ingest/ingest.ts';
@@ -12,9 +12,10 @@ const TOTAL_BUDGET_MS = 1500;
 
 // `leftoff` / `leftoff loops` (§1.10): ingest, then loose ends across every
 // project. Projects whose git status can't be read in time are shown, marked.
-export async function runLoops(opts: {
-  json: boolean;
-}): Promise<{ output: string; exitCode: number }> {
+export async function runLoops(
+  opts: { json: boolean },
+  deps: { filter?: ProjectFilter } = {}, // test seam: which folders are projects
+): Promise<{ output: string; exitCode: number }> {
   const start = Date.now();
   const config = loadConfig();
   const now = new Date();
@@ -32,6 +33,7 @@ export async function runLoops(opts: {
       now,
       readWorking: readWorkingState,
       deadline: start + TOTAL_BUDGET_MS,
+      ...(deps.filter ? { filter: deps.filter } : {}),
     });
     const color = !process.env.NO_COLOR && Boolean(process.stdout.isTTY);
     const output = opts.json

@@ -12,8 +12,10 @@ import type { IngestReport } from '../../ingest/ingest.ts';
 import { claudePluginInstalled } from '../../install/claude-plugin.ts';
 import {
   hasShellHook,
+  isCurrentShellHook,
   installedShellScriptVersion,
   rcPathFor,
+  shellHookLine,
   type ShellName,
 } from '../../install/shell-rc.ts';
 import { shimStatus } from '../../install/shim.ts';
@@ -189,18 +191,26 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorResult> {
 
   const shell = loginShell();
   const home = homedir();
-  let hookInstalled = (['zsh', 'bash', 'fish'] as const).some((s) =>
+  const hookInstalled = (['zsh', 'bash', 'fish'] as const).some((s) =>
     hasShellHook(rcPathFor(s, home)),
   );
-  if (shell !== null) {
-    const rc = rcPathFor(shell, home);
-    const present = hasShellHook(rc);
-    hookInstalled ||= present;
+  // The login shell's rc file, and every other one that has a leftoff block
+  // (Task 15b). A block that runs another install's script warns.
+  const checkedShells = (['zsh', 'bash', 'fish'] as const)
+    .filter((s) => s === shell || hasShellHook(rcPathFor(s, home)))
+    .sort((a, b) => Number(b === shell) - Number(a === shell));
+  for (const s of checkedShells) {
+    const rc = rcPathFor(s, home);
+    const line = shellHookLine(rc);
     add(
-      present
-        ? pass(`Shell hook (${shell})`, rc)
-        : fail(`Shell hook (${shell})`, `no leftoff block in ${rc}`, SETUP),
+      line === null
+        ? fail(`Shell hook (${s})`, `no leftoff block in ${rc}`, SETUP)
+        : isCurrentShellHook(s, rc, join(p.shellDir, `leftoff.${s}`))
+          ? pass(`Shell hook (${s})`, rc)
+          : warn(`Shell hook (${s})`, `the leftoff block in ${rc} runs: ${line}`, SETUP),
     );
+  }
+  if (shell !== null) {
     const scriptVersion = installedShellScriptVersion(shell);
     add(
       scriptVersion === pkg.version

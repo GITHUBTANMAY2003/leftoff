@@ -67,3 +67,26 @@ export function isScratchCommand(raw: string): boolean {
     steps.every((step) => isCd(step) || isProbeCommand(step) || isScratchCommand(step))
   );
 }
+
+// A command that touches a temp folder (/tmp, /private/tmp, /var/folders, an
+// agent's scratchpad, $TMPDIR, mktemp) is scratch from any source, your shell
+// included: nothing there belongs to the project (Task 15b).
+const TEMP_DIR =
+  /(^|[\s'"=:(])(\/private)?\/tmp(\/|\s|$)|\/var\/folders\/|\/scratchpad(\/|\s|$)|\$\{?TMPDIR\b|\bmktemp\b/;
+export function referencesTempDir(command: string): boolean {
+  return TEMP_DIR.test(command);
+}
+
+// The agent's tool was refused, blocked or misused (Task 15b): an error of the
+// agent's harness, never a problem of the project.
+const AGENT_TOOL_ERRORS = [
+  /<tool_use_error>/,
+  /^\s*Blocked:/m,
+  /The user doesn't want to proceed with this tool use/,
+  /\bPermission to use \S+.* (has been|was) denied\b/,
+  /\brejected by (the )?user\b/i,
+  /\[Request interrupted by user/,
+];
+export function isAgentToolError(text: string): boolean {
+  return AGENT_TOOL_ERRORS.some((p) => p.test(text));
+}

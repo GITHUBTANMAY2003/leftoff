@@ -14,8 +14,10 @@ export function fit(prefix: string, text: string, width = LINE_WIDTH): string {
   return clip(text, width - [...prefix].length);
 }
 
-// Lists show at most this many items, then "+N more" (owner decision after Task 13).
+// Lists show at most this many items, then "+N more" (owner decision after Task 13);
+// open problems at most 3, newest first (Task 15b).
 const MAX_ITEMS = 5;
+const MAX_PROBLEMS = 3;
 
 // Cuts `text` but keeps `tail` whole after it, so an ending such as
 // "(still failing)" or "(2 attempts)" always survives (owner decision, Task 11).
@@ -114,10 +116,10 @@ export function renderTerminal(
     }`,
     ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
   ];
-  // At most MAX_ITEMS problems, each with its tried: line, then "+N more".
+  // At most MAX_PROBLEMS problems, each with its tried: line, then "+N more".
   const problems = (items: { text: string; attempts: string[] }[]) => [
-    ...items.slice(0, MAX_ITEMS).flatMap((x) => problem(x.text, x.attempts)),
-    ...(items.length > MAX_ITEMS ? [bullet(`+${items.length - MAX_ITEMS} more`)] : []),
+    ...items.slice(0, MAX_PROBLEMS).flatMap((x) => problem(x.text, x.attempts)),
+    ...(items.length > MAX_PROBLEMS ? [bullet(`+${items.length - MAX_PROBLEMS} more`)] : []),
   ];
   const { claimed, open } = splitProblems(f);
 

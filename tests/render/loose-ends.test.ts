@@ -152,7 +152,7 @@ test('with color, the text is the same once the ANSI codes are removed', () => {
 
 test('a long command is shortened from the middle so the error stays on the line (owner decision after Task 14)', () => {
   const cmd =
-    'cargo test -p looplint_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
+    'cargo test -p payments_adapters --test openai_agents -- qualified_and_aliased run_agent_that_is star_import';
   const out = renderLooseEnds(
     [
       entry({
@@ -167,4 +167,38 @@ test('a long command is shortened from the middle so the error stays on the line
   expect(line).toContain('` — test result: FAILED');
   expect(line).toMatch(/^ {2}✗ `cargo test … .*star_import` — /);
   expect(line.endsWith('(1 attempt)')).toBe(true);
+});
+
+test('at most 3 problems per project, newest first, then "+N more problems" (Task 15b)', () => {
+  const problems = [1, 2, 3, 4, 5].map((n) => ({
+    error: `error ${n}`,
+    command: `make step${n}`,
+    isTest: false,
+    source: 'shell' as const,
+    firstSeen: '2026-10-20T18:00:00.000Z',
+    attempts: [],
+  }));
+  const out = renderLooseEnds(
+    [
+      {
+        project: { root: '/a', name: 'a' },
+        branch: null,
+        lastActiveAt: '2026-10-21T08:00:00.000Z',
+        stale: false,
+        claimedDone: null,
+        openProblems: problems,
+        uncommittedCount: 0,
+        gitUnavailable: false,
+      },
+    ],
+    new Date('2026-10-21T09:00:00.000Z'),
+    { color: false },
+  ).split('\n');
+  expect(out.slice(2, 7)).toEqual([
+    'a · 1h ago',
+    '  ✗ `make step1` — error 1',
+    '  ✗ `make step2` — error 2',
+    '  ✗ `make step3` — error 3',
+    '  • +2 more problems',
+  ]);
 });

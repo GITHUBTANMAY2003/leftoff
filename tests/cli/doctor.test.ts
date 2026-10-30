@@ -283,3 +283,29 @@ test('doctor never throws, even when the database cannot be opened', async () =>
   expect(check(r, 'Database').ok).toBe(false);
   expect(r.exitCode).toBe(1);
 });
+
+// ---- Task 15b: every rc file that has a leftoff block is checked ----
+
+test('a leftoff block in another shell rc file is checked too', async () => {
+  installedState(); // zsh, the login shell
+  const bashrc = join(t.home, '.bashrc');
+  installShellHook('bash', bashrc, join(paths().shellDir, 'leftoff.bash'));
+  const r = await doctor();
+  expect(check(r, 'Shell hook (zsh)').ok).toBe(true);
+  expect(check(r, 'Shell hook (bash)')).toMatchObject({ ok: true, detail: bashrc });
+  expect(r.checks.map((c) => c.name)).not.toContain('Shell hook (fish)'); // no block there
+});
+
+test('a block that points at another leftoff install warns, with the setup hint', async () => {
+  installedState();
+  const bashrc = join(t.home, '.bashrc');
+  installShellHook('bash', bashrc, '/old/place/leftoff.bash');
+  const r = await doctor();
+  expect(check(r, 'Shell hook (bash)')).toMatchObject({
+    ok: false,
+    warn: true,
+    hint: 'Run leftoff setup',
+  });
+  expect(check(r, 'Shell hook (bash)').detail).toContain('/old/place/leftoff.bash');
+  expect(r.exitCode).toBe(0); // a warning
+});

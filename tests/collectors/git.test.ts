@@ -233,6 +233,40 @@ describe('gitCollector: only your own commits (owner decision after Task 5)', ()
     expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['mine']);
   });
 
+  test('an email with regex characters (a GitHub noreply address with "+") matches literally (Task 15b)', async () => {
+    const me = '12345+some.one@users.noreply.github.com';
+    const root = initRepo(tmp, 'app', 'main', me);
+    commit(root, 'mine', undefined, me);
+    commit(root, 'lookalike', undefined, '123455some.one@users.noreply.github.com'); // `\+` as a pattern
+    commit(root, 'lookalike too', undefined, '12345+someXone@users.noreply.github.com'); // `.` as a pattern
+    track(root);
+    expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['mine']);
+  });
+
+  test('a cursor saved before the email fix reads the commits again (Task 15b)', async () => {
+    const me = '12345+someone@users.noreply.github.com';
+    const root = initRepo(tmp, 'app', 'main', me);
+    commit(root, 'mine', undefined, me);
+    track(root);
+    const head = git(root, ['rev-parse', 'HEAD']);
+    // what an earlier leftoff saved: HEAD read, but no commit matched
+    ctx.repo.setCursor(
+      'git',
+      root,
+      JSON.stringify({ commit: head, reflogAt: null, reflogKeys: [], noEmailLogged: false }),
+    );
+    expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['mine']);
+  });
+
+  test('user.email unset is logged once per repo, even when that run is never saved', async () => {
+    const root = initRepo(tmp, 'app', 'main', null);
+    commit(root, 'mine', undefined, 'me@example.com');
+    track(root);
+    await gitCollector.collect(ctx); // result dropped: e.g. the ingest ran out of time
+    await gitCollector.collect(ctx);
+    expect(readRecentErrors(20).filter((l) => l.includes('user.email'))).toHaveLength(1);
+  });
+
   test('user.email unset: all commits are kept and it is logged once', async () => {
     const root = initRepo(tmp, 'app', 'main', null);
     commit(root, 'mine', undefined, 'me@example.com');

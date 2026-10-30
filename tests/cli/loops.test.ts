@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
+import { defaultProjectFilter } from '../../src/brief/loose-ends.ts';
 import { runLoops } from '../../src/cli/commands/loops.ts';
 import { ensureHome } from '../../src/core/paths.ts';
 import { openDb } from '../../src/store/db.ts';
@@ -32,6 +33,9 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
+// The test projects live in a temp folder, which loose ends leave out (Task 15b).
+const inTemp = { filter: { ...defaultProjectFilter(), tempDirs: [] } };
+
 // Rahul's events, re-dated to end one hour ago so they are inside retentionDays.
 function seedRahul(root: string): void {
   const events = rahulEvents(root);
@@ -47,7 +51,7 @@ test('loops lists a project with an open problem and uncommitted work', async ()
   const app = initRepo(tmp, 'myapp', 'feature/forgot-password');
   writeFileSync(join(app, 'email_service.py'), 'x\n');
   seedRahul(app);
-  const r = await runLoops({ json: false });
+  const r = await runLoops({ json: false }, inTemp);
   expect(r.exitCode).toBe(0);
   expect(r.output).toBe(
     [
@@ -65,7 +69,7 @@ test('loops lists a project with an open problem and uncommitted work', async ()
 test('loops --json prints the loose ends as JSON', async () => {
   const app = initRepo(tmp, 'myapp');
   seedRahul(app);
-  const parsed = JSON.parse((await runLoops({ json: true })).output);
+  const parsed = JSON.parse((await runLoops({ json: true }, inTemp)).output);
   expect(parsed).toHaveLength(1);
   expect(parsed[0]).toMatchObject({ project: { root: app, name: 'myapp' }, uncommittedCount: 0 });
   expect(parsed[0].openProblems[0].error).toBe('SMTP connection refused');
@@ -77,7 +81,7 @@ test('loops with nothing tracked says there are no loose ends', async () => {
   );
 });
 
-test('bare `leftoff` runs loops', () => {
+test('bare `leftoff` runs loops, which leaves out projects in a temp folder (Task 15b)', () => {
   const app = initRepo(tmp, 'myapp');
   seedRahul(app);
   const cli = resolve(import.meta.dirname, '../../src/cli/index.ts');
@@ -85,7 +89,7 @@ test('bare `leftoff` runs loops', () => {
     spawnSync(process.execPath, [cli, ...args], { cwd: tmp, env: process.env, encoding: 'utf8' });
   const bare = run([]);
   expect(bare.status).toBe(0);
-  expect(bare.stdout).toMatch(/^Loose ends across 1 project\n/);
+  expect(bare.stdout).toBe('No loose ends. Everything is committed and passing.\n');
   expect(bare.stdout).toBe(run(['loops']).stdout);
-  expect(JSON.parse(run(['loops', '--json']).stdout)).toHaveLength(1);
+  expect(JSON.parse(run(['loops', '--json']).stdout)).toEqual([]);
 });

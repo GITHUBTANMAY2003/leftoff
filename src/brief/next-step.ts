@@ -1,4 +1,8 @@
+import type { Source } from '../model/event.ts';
 import { contradictionOf, problemText, type BriefFacts } from './facts.ts';
+
+export const agentName = (source: Source): string =>
+  ({ claude: 'Claude', codex: 'Codex' })[source as 'claude' | 'codex'] ?? 'The agent';
 
 const NEXT_NOTE = /^next:\s*/i;
 
@@ -8,6 +12,9 @@ const NEXT_NOTE = /^next:\s*/i;
 export function chooseNextStep(f: Omit<BriefFacts, 'nextStep'>): string | null {
   const note = [...f.notes].reverse().find((n) => NEXT_NOTE.test(n));
   if (note !== undefined) return note.replace(NEXT_NOTE, '');
+  // The agent asked you something (Task 15b): answering comes first.
+  if (f.lastAgent?.question)
+    return `Answer ${agentName(f.lastAgent.source)}'s question: ${f.lastAgent.question}`;
   const contradiction = f.claimedDone?.contradictions[0];
   if (contradiction !== undefined) {
     // A failing command is verified by running it again.

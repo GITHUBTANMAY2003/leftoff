@@ -97,9 +97,16 @@ interface GitCursor {
   commit: string | null;
   reflogAt: string | null;
   reflogKeys: string[];
-  noEmailLogged: boolean; // "user.email not set" is logged once per repo, not every run
+  noEmailLogged: boolean; // kept for older cursors; the log marker is the 'git-email' cursor
   checkedAt?: string; // least recently checked goes first (soft deadline rotation)
+  authorMatch?: number; // AUTHOR_MATCH of the run that saved it
 }
+
+// The author filter was a regular expression before Task 15b, so an email
+// with "+" (GitHub noreply addresses) matched none of your commits. A cursor
+// saved before the fix reads its repo again like a first run; dedupe keys
+// absorb the repeats.
+const AUTHOR_MATCH = 2;
 
 function readCursor(value: string | null): GitCursor {
   try {
@@ -112,6 +119,7 @@ function readCursor(value: string | null): GitCursor {
         : [],
       noEmailLogged: c.noEmailLogged === true,
       ...(typeof c.checkedAt === 'string' ? { checkedAt: c.checkedAt } : {}),
+      ...(typeof c.authorMatch === 'number' ? { authorMatch: c.authorMatch } : {}),
     };
   } catch {
     return { commit: null, reflogAt: null, reflogKeys: [], noEmailLogged: false };
@@ -130,8 +138,6 @@ async function userEmail(root: string): Promise<string | null> {
   }
 }
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 // Only your own commits count as done work (owner decision after Task 5): a
 // teammate's commits arrive on HEAD with every pull. Merge commits are skipped.
 async function readCommits(
@@ -148,7 +154,11 @@ async function readCommits(
     throw err;
   }
   const format = `--format=%H${FIELD}%aI${FIELD}%s${RECORD}`;
-  const filters = ['--no-merges', ...(email ? ['-i', `--author=<${escapeRegExp(email)}>`] : [])];
+  // A fixed string, not a pattern: "+" and "." in an email are literal.
+  const filters = [
+    '--no-merges',
+    ...(email ? ['-i', '--fixed-strings', `--author=<${email}>`] : []),
+  ];
   const firstRun = [
     'log',
     format,
@@ -270,13 +280,21 @@ export const gitCollector: Collector = {
       checked++;
       try {
         const email = await userEmail(root);
-        if (email === null && !cursor.noEmailLogged) {
+        // Logged once per repo: the marker is saved at once, not with this
+        // run's cursors, so a run that is never saved can't log it again.
+        if (
+          email === null &&
+          !cursor.noEmailLogged &&
+          ctx.repo.getCursor('git-email', root) === null
+        ) {
           logError(
             'git',
             `user.email is not set in ${root}; counting every author's commits as yours`,
           );
+          ctx.repo.setCursor('git-email', root, 'logged');
         }
-        const commits = await readCommits(root, cursor.commit, email, ctx);
+        const from = cursor.authorMatch === AUTHOR_MATCH ? cursor.commit : null;
+        const commits = await readCommits(root, from, email, ctx);
         const switches = await readSwitches(root, cursor, ctx);
         result.events.push(...commits.events, ...switches.events);
         const next: GitCursor = {
@@ -285,6 +303,7 @@ export const gitCollector: Collector = {
           reflogKeys: switches.keys,
           noEmailLogged: email === null,
           checkedAt: new Date().toISOString(),
+          authorMatch: AUTHOR_MATCH,
         };
         result.pendingCursors.push({ key: root, value: JSON.stringify(next) });
       } catch (err) {

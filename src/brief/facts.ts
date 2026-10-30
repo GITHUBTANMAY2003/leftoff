@@ -3,9 +3,10 @@ import type { WorkingState } from '../collectors/git.ts';
 import type { Config } from '../core/config.ts';
 import type { CollectorName, IngestReport } from '../ingest/ingest.ts';
 import { isProbeFailure } from '../collectors/probes.ts';
-import { isScratchCommand } from '../collectors/scratch.ts';
+import { isAgentToolError, isScratchCommand, referencesTempDir } from '../collectors/scratch.ts';
 import { isFilteredExit } from '../collectors/test-failures.ts';
 import {
+  chainSteps,
   commandFiles,
   commandKey,
   displayCommand,
@@ -15,6 +16,7 @@ import {
   type WorkEvent,
 } from '../model/event.ts';
 import type { Repo } from '../store/repo.ts';
+import { failureCategory, isWholeProjectRun, resolvedCategories } from './failure-words.ts';
 import { chooseNextStep } from './next-step.ts';
 import { splitSessions } from './sessions.ts';
 
@@ -30,6 +32,7 @@ export interface BriefFacts {
   unfinished: { files: { path: string; status: string }[]; diffStat: string | null };
   lastIntent: string | null;
   lastAgentMessage: string | null;
+  lastAgent: LastAgent | null; // Task 15b: the agent's final message in plain words
   openProblems: OpenProblem[];
   claimedDone: ClaimedDone | null;
   notes: string[];
@@ -43,6 +46,11 @@ export interface OpenProblem {
   source: Source;
   firstSeen: string;
   attempts: string[];
+}
+export interface LastAgent {
+  source: Source;
+  update: string; // the first one or two sentences of its final message
+  question: string | null; // its last sentence, when that asks you something
 }
 export interface ClaimedDone {
   source: Source;
@@ -74,6 +82,8 @@ const CLAIM =
 const NEGATION =
   /\b(not|isn't|wasn't|haven't|still)\b.{0,20}\b(done|complete|finished|fixed|passing)\b/i;
 const COMMIT_CLAIM = /\b(committed|pushed|merged|ready to merge)\b/i;
+// An agent that paused or hit its limit is not saying it is done (Task 15b).
+const PAUSED = /\b(usage limit|rate limit|paused|ran out of (context|tokens|time))\b/i;
 
 const firstLine = (text: string) =>
   text
@@ -132,9 +142,16 @@ function claimSentence(sentence: string): string {
 const AGENTS = new Set<Source>(['claude', 'codex']);
 // Scratch failures (owner decision after Task 13) are stored but are not loose
 // ends, like probes. Events stored before the rule are classified here too.
+// A command that references a temp folder is scratch from any source (Task 15b).
 const isScratch = (e: WorkEvent) =>
   e.data.scratch === true ||
-  (AGENTS.has(e.source) && typeof e.data.command === 'string' && isScratchCommand(e.data.command));
+  (typeof e.data.command === 'string' &&
+    (referencesTempDir(e.data.command) ||
+      (AGENTS.has(e.source) && isScratchCommand(e.data.command))));
+// The agent's tool was refused or misused (Task 15b): never a project problem.
+const isAgentToolFailure = (e: WorkEvent) =>
+  AGENTS.has(e.source) &&
+  isAgentToolError(`${typeof e.data.error === 'string' ? e.data.error : ''}\n${e.summary}`);
 
 const rawCommand = (e: WorkEvent) => (typeof e.data.command === 'string' ? e.data.command : null);
 const outputOf = (e: WorkEvent) => (typeof e.data.error === 'string' ? e.data.error : '');
@@ -196,29 +213,55 @@ export const contradictionOf = (p: OpenProblem): string => `${problemText(p)} (s
 interface ProblemGroup {
   failures: WorkEvent[]; // unresolved failures of one command, oldest first
   firstIndex: number;
+  lastIndex: number;
 }
+
+const isNotAProblem = (e: WorkEvent) => isProbe(e) || isScratch(e) || isAgentToolFailure(e); // stored, not a loose end
+
+// An event that is a commit: from git, or an agent's or your own `git commit`.
+const isCommit = (e: WorkEvent) =>
+  e.kind === 'commit' ||
+  (e.kind === 'command' &&
+    typeof e.data.command === 'string' &&
+    chainSteps(e.data.command).some((step) => /^git commit\b/.test(normalizeCommand(step))));
 
 // Failures are grouped by normalized command; a later successful run of the
 // same command resolves the group. A failure without a command (a tool error)
-// is its own group and can't be resolved by a command.
+// is its own group and can't be resolved by a command. Task 15b adds two
+// rules: a passing whole-project check resolves every failure of its category
+// (a check script: tests, lint, formatting, types and build), and a commit
+// after a passing check resolves every failure from before that check.
 function problemGroups(events: WorkEvent[]): Map<string, ProblemGroup> {
   const groups = new Map<string, ProblemGroup>();
+  let passedCheckAt = -1; // index of the newest passing whole-project check
   events.forEach((e, index) => {
     const command = commandOf(e);
     const succeeded = e.kind === 'command' || isFilteredPass(e);
-    if (!succeeded && FAILURES.has(e.kind) && (isProbe(e) || isScratch(e))) return; // stored, not a loose end
+    if (!succeeded && FAILURES.has(e.kind) && isNotAProblem(e)) return;
     if (!succeeded && FAILURES.has(e.kind)) {
       const key =
         command !== null ? `cmd:${command}` : `${e.kind}:${String(e.data.tool)}:${e.summary}`;
-      const group = groups.get(key) ?? { failures: [], firstIndex: index };
+      const group = groups.get(key) ?? { failures: [], firstIndex: index, lastIndex: index };
       group.failures.push(e);
+      group.lastIndex = index;
       groups.set(key, group);
-    } else if (succeeded && command !== null) {
+      return;
+    }
+    if (isCommit(e) && passedCheckAt >= 0) {
+      for (const [name, group] of groups) if (group.lastIndex < passedCheckAt) groups.delete(name);
+    }
+    if (succeeded && command !== null) {
       // A filtered pass speaks for the command before the filter.
       const ran = e.kind === 'command' ? command : normalizeCommand(withoutFilters(command));
+      const category = isWholeProjectRun(ran) ? failureCategory(ran) : null;
+      const covered = category === null ? [] : resolvedCategories(category);
+      if (category !== null) passedCheckAt = index;
       for (const [name, group] of groups) {
         const failed = commandOf(group.failures[0] as WorkEvent);
-        if (failed !== null && resolves(ran, failed)) groups.delete(name);
+        if (failed === null) continue;
+        const failedCategory = failureCategory(failed);
+        const sameCategory = failedCategory !== null && covered.includes(failedCategory);
+        if (resolves(ran, failed) || sameCategory) groups.delete(name);
       }
     }
   });
@@ -263,7 +306,9 @@ export function detectClaimedDone(
   let sentences: string[] = [];
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i] as WorkEvent;
+    const head = typeof e.data.head === 'string' ? e.data.head : '';
     if (e.kind !== 'agent_message' || NEGATION.test(e.summary)) continue;
+    if (PAUSED.test(e.summary) || PAUSED.test(head)) continue;
     sentences = claimSentences(e.summary);
     if (sentences.length > 0) {
       claimIndex = i;
@@ -342,6 +387,72 @@ function sourcesOf(report: IngestReport | null): BriefFacts['sources'] {
   });
 }
 
+// Work, as opposed to looking around (Task 15b): an agent turn, an edit, a
+// commit, a branch switch or a real failure. A session without any (opening a
+// terminal, `leftoff resume`, `git log`, an agent session that only started)
+// doesn't move the brief's window.
+const WORK_KINDS = new Set([
+  'user_prompt',
+  'agent_message',
+  'file_edit',
+  'commit',
+  'branch_switch',
+]);
+const isWork = (e: WorkEvent) =>
+  WORK_KINDS.has(e.kind) ||
+  (FAILURES.has(e.kind) &&
+    !(e.kind === 'command_failed' && isFilteredPass(e)) &&
+    !isNotAProblem(e));
+
+// The last request as you wrote it: pasted-content tags dropped. A summary the
+// agent wrote for itself when its context ran out is not a request.
+const NOT_A_REQUEST =
+  /^(This session is being continued from a previous conversation|\[Request interrupted by user)/;
+const PASTED_TAG = /<\/?pasted_content\b[^>]*>/g;
+function lastRequest(window: WorkEvent[]): string | null {
+  const prompt = [...window]
+    .reverse()
+    .find((e) => e.kind === 'user_prompt' && !NOT_A_REQUEST.test(e.summary.trim()));
+  return prompt ? quote(prompt.summary.replace(PASTED_TAG, ' ')) : null;
+}
+
+// The agent's final message in plain words (Task 15b): its first one or two
+// sentences (markdown emphasis dropped), and its last sentence when that asks
+// you something — a question, or an offer such as "tell me if you want that".
+const MAX_UPDATE_CHARS = 240;
+const SECOND_SENTENCE_BELOW = 120;
+const ASKS =
+  /\?["')\]]*$|\b(tell me|let me know)\b.*\b(if|whether|which)\b|\b(want me to|should I|shall I|would you like)\b/i;
+const sentencesOf = (text: string) =>
+  text
+    .split(/\n\s*\n/)
+    .flatMap((paragraph) => (quote(paragraph) ?? '').split(/(?<=[.!?])\s+(?=[A-Z`"*(\d])/))
+    .filter((t) => t !== '');
+function lastAgentOf(window: WorkEvent[]): LastAgent | null {
+  const e = [...window].reverse().find((x) => x.kind === 'agent_message');
+  if (!e) return null;
+  // Messages stored before 15b keep only their end: start at the first full sentence.
+  const start = typeof e.data.head === 'string' ? e.data.head : e.summary;
+  let sentences = sentencesOf(start.replace(/\*\*/g, ''));
+  if (start.startsWith('…') && sentences.length > 1) sentences = sentences.slice(1);
+  sentences = sentences.filter((t) => !t.endsWith('…') || t === sentences[0]);
+  const last = sentencesOf(e.summary.replace(/\*\*/g, '')).at(-1) ?? '';
+  const question = ASKS.test(last) && !last.startsWith('…') ? last : null;
+  // The question is shown on its own, not repeated in the update.
+  const [first = '', second] = sentences.filter((t, i) => i === 0 || t !== question);
+  const update =
+    second !== undefined && [...first].length < SECOND_SENTENCE_BELOW
+      ? `${first} ${second}`
+      : first;
+  return { source: e.source, update: clipText(update, MAX_UPDATE_CHARS), question };
+}
+const clipText = (text: string, max: number) => {
+  const chars = [...text];
+  if (chars.length <= max) return text;
+  const cut = chars.slice(0, max - 1).join('');
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 1))}…`;
+};
+
 export function buildFacts(
   root: string,
   deps: {
@@ -355,10 +466,16 @@ export function buildFacts(
   const since = new Date(deps.now.getTime() - deps.config.retentionDays * DAY_MS).toISOString();
   const events = deps.repo.eventsForProject(root, since);
   const sessions = splitSessions(events, deps.config.sessionGapMinutes);
-  const last = sessions.at(-1) ?? [];
-  // The most recent session; with fewer than 3 events, the one before it too.
+  // The most recent work session; with fewer than 3 events, the one before it
+  // too. Sessions that only looked around don't count (Task 15b), but their
+  // commands still resolve failures (`after`).
+  const working = sessions.filter((session) => session.some(isWork));
+  const pool = working.length > 0 ? working : sessions;
+  const last = pool.at(-1) ?? [];
   const window =
-    last.length < 3 && sessions.length > 1 ? [...(sessions.at(-2) as WorkEvent[]), ...last] : last;
+    last.length < 3 && pool.length > 1 ? [...(pool.at(-2) as WorkEvent[]), ...last] : last;
+  const after = sessions.slice(sessions.indexOf(last) + 1).flat();
+  const scope = [...window, ...after];
   const newest = (kind: string) =>
     quote([...window].reverse().find((e) => e.kind === kind)?.summary ?? null);
 
@@ -367,7 +484,7 @@ export function buildFacts(
   const unfinished = deps.working
     ? { files: deps.working.files, diffStat: deps.working.diffStat }
     : { files: [], diffStat: null };
-  const openProblems = findOpenProblems(window);
+  const openProblems = findOpenProblems(scope);
   const nowIso = deps.now.toISOString();
 
   const facts: Omit<BriefFacts, 'nextStep'> = {
@@ -377,10 +494,11 @@ export function buildFacts(
     window: { from: window[0]?.ts ?? nowIso, to: window.at(-1)?.ts ?? nowIso },
     done: edited ? [...commits, edited] : commits,
     unfinished,
-    lastIntent: newest('user_prompt'),
+    lastIntent: lastRequest(window),
     lastAgentMessage: newest('agent_message'),
+    lastAgent: lastAgentOf(window),
     openProblems,
-    claimedDone: detectClaimedDone(window, openProblems, unfinished.files.length),
+    claimedDone: detectClaimedDone(scope, openProblems, unfinished.files.length),
     notes: events.filter((e) => e.kind === 'note').map((e) => e.summary), // P11: always shown
     sources: sourcesOf(deps.report ?? storedReport(deps.repo)),
   };

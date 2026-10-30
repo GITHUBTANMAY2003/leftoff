@@ -26,6 +26,7 @@ beforeEach(() => {
   config = structuredClone(DEFAULT_CONFIG) as Config;
   working = {};
   gitReads = [];
+  gitRepos = null;
 });
 
 afterEach(() => {
@@ -66,7 +67,10 @@ const uncommitted = (root: string, n: number) => {
   };
 };
 
-const build = (over: { deadline?: number } = {}) =>
+// Every test project counts as a git repo outside any temp folder unless a
+// test says otherwise (Task 15b filter).
+let gitRepos: ((root: string) => boolean) | null;
+const build = (over: { deadline?: number; tempDirs?: string[] } = {}) =>
   buildLooseEnds({
     repo,
     config,
@@ -75,7 +79,8 @@ const build = (over: { deadline?: number } = {}) =>
       gitReads.push(root);
       return working[root] ?? { branch: null, files: [], diffStat: null };
     },
-    ...over,
+    filter: { tempDirs: over.tempDirs ?? [], isGitRepo: gitRepos ?? (() => true) },
+    ...(over.deadline !== undefined ? { deadline: over.deadline } : {}),
   });
 
 test('loose ends: ordering is claimedDone, open problems, stale, oldest', () => {
@@ -177,4 +182,38 @@ test('past the deadline, git is not read and the remaining projects are marked u
   const [entry] = build({ deadline: Date.now() - 1 });
   expect(gitReads).toEqual([]);
   expect(entry).toMatchObject({ project: { root: '/a' }, gitUnavailable: true });
+});
+
+// ---- Task 15b D: only real projects ----
+
+const shellEvent = (root: string, hoursAgo: number, command: string) => ({
+  ...failure(root, hoursAgo, command),
+  source: 'shell' as const,
+  dedupeKey: `sh-${seq++}`,
+});
+
+test('folders under a temp dir, hash-named folders and agent config dirs are not projects', () => {
+  repo.insertEvents([
+    failure('/tmp/fixture', 2, 'make a'),
+    failure('/scratch/t/agent/scratchpad/try', 2, 'make a'),
+    failure('/home/u/.cache/a3f9c2e81b7d4056e9f1c3b2a7d8e604', 2, 'make a'),
+    failure('/home/u/.claude/plugins/thing', 2, 'make a'),
+    failure('/home/u/.codex/skills/x', 2, 'make a'),
+    failure('/home/u/app', 2, 'make a'),
+  ]);
+  expect(build({ tempDirs: ['/tmp'] }).map((l) => l.project.root)).toEqual(['/home/u/app']);
+});
+
+test('a folder that is not a git repo counts only with terminal activity', () => {
+  gitRepos = (root) => root === '/home/u/repo';
+  repo.insertEvents([
+    failure('/home/u/agent-only', 2, 'make a'), // no git, only an agent worked there
+    shellEvent('/home/u/scripts', 2, 'make b'), // no git, but you used it in your terminal
+    failure('/home/u/repo', 2, 'make c'),
+  ]);
+  expect(
+    build()
+      .map((l) => l.project.root)
+      .sort(),
+  ).toEqual(['/home/u/repo', '/home/u/scripts']);
 });

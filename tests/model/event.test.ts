@@ -151,12 +151,12 @@ test.each([
 // cleanup as the comparison — setup prefixes and trailing filters dropped.
 test.each([
   [
-    'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^(error|warning)|panicked" -A6',
-    'cargo test -p looplint_adapters',
+    'source "$HOME/.cargo/env" && cargo test -p payments_adapters | grep -E "^(error|warning)|panicked" -A6',
+    'cargo test -p payments_adapters',
   ],
   [
-    'source "$HOME/.cargo/env" && cargo test -p looplint_adapters',
-    'cargo test -p looplint_adapters',
+    'source "$HOME/.cargo/env" && cargo test -p payments_adapters',
+    'cargo test -p payments_adapters',
   ],
   ['export A=1 && cd x && make deploy', 'make deploy'],
   ['source env.sh ; set -e ; cargo test', 'cargo test'],

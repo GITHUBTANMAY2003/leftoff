@@ -55,6 +55,19 @@ function block(shell: ShellName, scriptPath: string): string {
   return `${BEGIN}\n${source}\n${END}\n`;
 }
 
+// The line the rc file's leftoff block runs, or null without a block (doctor:
+// a block from another install points at another script, Task 15b).
+export function shellHookLine(rcPath: string): string | null {
+  if (!existsSync(rcPath)) return null;
+  const found = BLOCK.exec(readFileSync(rcPath, 'utf8'))?.[0];
+  return found === undefined ? null : (found.split('\n')[1] ?? '');
+}
+
+// Whether the rc file's block is exactly the one setup would write now.
+export function isCurrentShellHook(shell: ShellName, rcPath: string, scriptPath: string): boolean {
+  return shellHookLine(rcPath) === block(shell, scriptPath).split('\n')[1];
+}
+
 // Whether the leftoff block is in the rc file (doctor).
 export function hasShellHook(rcPath: string): boolean {
   return existsSync(rcPath) && BLOCK.test(readFileSync(rcPath, 'utf8'));

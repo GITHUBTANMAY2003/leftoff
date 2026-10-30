@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
+import { buildFacts } from '../../src/brief/facts.ts';
+import { factsHash } from '../../src/brief/hash.ts';
 import { isBriefDue, runBriefAuto } from '../../src/cli/commands/brief-auto.ts';
 import { DEFAULT_CONFIG, saveConfig, type Config } from '../../src/core/config.ts';
 import { ensureHome } from '../../src/core/paths.ts';
@@ -77,9 +79,7 @@ test('due after 4h gap, not due twice', async () => {
   seed(5);
   expect(withRepo((repo) => isBriefDue(project, repo, config(), NOW))).toBe(true);
   const out = await runBriefAuto(project, deps());
-  expect(out.split('\n')[0]).toBe(
-    'Where you left off — myapp (feature/forgot-password) · last active 5h ago',
-  );
+  expect(out.split('\n')[0]).toBe('myapp · 5h ago · branch feature/forgot-password');
   expect(out.split('\n').at(-1)).toBe('Run `leftoff resume` for details');
   expect(await runBriefAuto(project, deps())).toBe(''); // shown for this activity
   expect(withRepo((repo) => isBriefDue(project, repo, config(), NOW))).toBe(false);
@@ -193,4 +193,30 @@ test('`leftoff brief --auto` prints nothing without activity, exits 0, and is hi
   const r = run(['brief', '--auto']);
   expect([r.status, r.stdout, r.stderr]).toEqual([0, '', '']);
   expect(run(['--help']).stdout).not.toMatch(/\bbrief\b/);
+});
+
+test('a cached polished summary for the same facts is shown first; a stale one is not (Task 15b)', async () => {
+  seed(5);
+  const hash = withRepo((repo) =>
+    factsHash(
+      buildFacts(project, {
+        repo,
+        config: config(),
+        report: null,
+        working: RAHUL_WORKING,
+        now: NOW,
+      }),
+    ),
+  );
+  withRepo((repo) =>
+    repo.saveBrief(project, hash, '{}', 'Rahul was adding password reset.', 'claude-cli'),
+  );
+  expect((await runBriefAuto(project, deps())).split('\n')[1]).toBe(
+    '  Rahul was adding password reset.',
+  );
+  withRepo((repo) => {
+    repo.saveBrief(project, 'stale', '{}', 'Old summary.', 'claude-cli');
+    repo.markBriefShown(project, '2000-01-01T00:00:00.000Z');
+  });
+  expect(await runBriefAuto(project, deps())).not.toContain('Old summary.');
 });

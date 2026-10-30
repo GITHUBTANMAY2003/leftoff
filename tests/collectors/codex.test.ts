@@ -535,3 +535,22 @@ test('probe failures are marked: ls /nope and the empty rg; the test run, lint a
     ['npx --no-install eslint .', false], // exit 130: interrupted, a real failure
   ]);
 });
+
+test('a long agent message keeps its start in data.head (Task 15b)', () => {
+  const text = `Task 3 is committed. ${'More detail follows here. '.repeat(30)}Should I push?`;
+  const [e] = parseCodexRecord(
+    {
+      timestamp: '2026-10-26T15:00:00.000Z',
+      ordinal: 1,
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        thread_id: 't',
+        item: { type: 'AgentMessage', content: [{ type: 'text', text }] },
+      },
+    },
+    { cwd: '/' },
+  );
+  expect(e?.summary.endsWith('Should I push?')).toBe(true);
+  expect(e?.data.head).toBe(text.slice(0, 299) + '…');
+});

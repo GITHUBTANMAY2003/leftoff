@@ -1,4 +1,8 @@
-Where you left off — myapp (feature/forgot-password) · last active 14h ago
-  • 1 uncommitted file
-  ✗ `python scripts/send_test_email.py` — SMTP connection refused
+myapp · 14h ago · branch feature/forgot-password
+  You asked: Add a forgot-password flow: endpoint, reset token, email
+  Claude's last update: The SMTP server still refuses the connection on both ports.
+  Done: Added reset-token migration · Built POST /auth/forgot-password endpoint
+  It stopped with: `python scripts/send_test_email.py` — SMTP connection refused
+  Still open: 1 uncommitted file
+  Pick up with: Get `python scripts/send_test_email.py` working (SMTP connection refused)
 Run `leftoff resume` for details

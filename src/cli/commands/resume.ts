@@ -9,6 +9,7 @@ import { polishNow } from '../../polish/summarize.ts';
 import type { PolishProvider } from '../../polish/types.ts';
 import { renderJson } from '../../render/json.ts';
 import { renderMarkdown } from '../../render/markdown.ts';
+import { renderBrief } from '../../render/narrative.ts';
 import { renderTerminal } from '../../render/terminal.ts';
 import { openDb } from '../../store/db.ts';
 import { createRepo } from '../../store/repo.ts';
@@ -21,7 +22,7 @@ const POLISH_OFF =
 export interface ResumeOptions {
   cwd: string;
   project?: string;
-  format: 'terminal' | 'md' | 'json';
+  format: 'terminal' | 'details' | 'md' | 'json'; // terminal: the narrative brief (Task 15b)
   // `--polish`: run the polish provider now (up to 60 s). Without it a cached
   // polished summary is used only while its facts still match.
   polish: boolean;
@@ -84,7 +85,9 @@ export async function runResume(
         ? renderJson(facts, polished)
         : opts.format === 'md'
           ? renderMarkdown(facts, polished, { now })
-          : renderTerminal(facts, polished, { color, now });
+          : opts.format === 'details'
+            ? renderTerminal(facts, polished, { color, now })
+            : renderBrief(facts, polished, { color, now });
     if (facts.lastActiveAt) repo.markBriefShown(root, facts.lastActiveAt);
     return { output, exitCode: 0, ...(polishOff ? { stderr: POLISH_OFF } : {}) };
   } finally {

@@ -259,14 +259,14 @@ test('an open problem shows its command without setup prefixes and trailing filt
   const [p] = findOpenProblems(
     timeline(
       fail(
-        'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^error" -A6',
+        'source "$HOME/.cargo/env" && cargo test -p payments_adapters | grep -E "^error" -A6',
         'test result: FAILED',
       ),
     ),
   );
-  expect(p?.command).toBe('cargo test -p looplint_adapters');
+  expect(p?.command).toBe('cargo test -p payments_adapters');
   expect(problemText(p as OpenProblem)).toBe(
-    '`cargo test -p looplint_adapters` — test result: FAILED',
+    '`cargo test -p payments_adapters` — test result: FAILED',
   );
 });
 
@@ -715,4 +715,258 @@ test('an open problem whose failures include a failed test run is marked as a te
     ['npm run lint', false],
     ['npm test', true],
   ]);
+});
+
+// ---- Task 15b B: failures that are not open problems ----
+
+test('agent tool errors are never project problems', () => {
+  const events = timeline(
+    fail('sleep 100; npm test', '<tool_use_error>Blocked: sleep 100 followed by …'),
+    [
+      'tool_error',
+      'Bash failed',
+      { tool: 'Bash', error: 'Permission to use Bash has been denied.' },
+    ],
+    [
+      'tool_error',
+      'Edit failed',
+      { tool: 'Edit', error: "The user doesn't want to proceed with this tool use." },
+    ],
+  );
+  expect(findOpenProblems(events)).toEqual([]);
+});
+
+test('a command that references a temp folder is scratch, also from your own shell', () => {
+  const [agent, shell] = timeline(
+    fail('cat /private/tmp/agent-1/tasks/x.output', 'No such file'),
+    fail('node /tmp/try.js', 'boom'),
+  );
+  const fromShell = { ...(shell as WorkEvent), source: 'shell' as const };
+  expect(findOpenProblems([agent as WorkEvent, fromShell])).toEqual([]);
+});
+
+test('a passing whole-project test run resolves every earlier test failure', () => {
+  const events = timeline(
+    fail('npx vitest run tests/cli/doctor.test.ts', '1 failed'),
+    fail('cargo test -- star_import', 'test result: FAILED'),
+    fail('npm run lint', 'error  no-unused-vars'),
+    ok('npm test'),
+  );
+  // the lint failure is another category: still open
+  expect(findOpenProblems(events).map((p) => p.command)).toEqual(['npm run lint']);
+});
+
+test('a passing check script resolves tests, lint, types and build', () => {
+  const events = timeline(
+    fail('npx vitest run tests/a.test.ts', '1 failed'),
+    fail('npx eslint src/a.ts', '2 problems'),
+    fail('npx tsc --noEmit', 'error TS2322'),
+    fail('./deploy.sh', 'connection refused'),
+    ok('npm run check 2>&1 | tail -5'),
+  );
+  expect(findOpenProblems(events).map((p) => p.command)).toEqual(['./deploy.sh']);
+});
+
+test('a passing run of part of the suite does not resolve other test failures', () => {
+  const events = timeline(
+    fail('npx vitest run tests/a.test.ts', '1 failed'),
+    ok('npx vitest run tests/b.test.ts'),
+    ok('pytest -k reset'),
+  );
+  expect(findOpenProblems(events)).toHaveLength(1);
+});
+
+test('a commit after a passing check resolves every failure before the check', () => {
+  const events = timeline(
+    fail('sqlite3 data.db "select x"', 'no such column: x'),
+    fail('npx vitest run tests/a.test.ts', '1 failed'),
+    ok('npm run check'),
+    fail('./deploy.sh', 'connection refused'), // after the check: stays open
+    ['commit', 'feat: setup command', { hash: 'abc' }],
+  );
+  expect(findOpenProblems(events).map((p) => p.command)).toEqual(['./deploy.sh']);
+});
+
+test("an agent's own `git commit` counts as the commit", () => {
+  const events = timeline(
+    fail('sqlite3 data.db "select x"', 'no such column: x'),
+    ok('npm test'),
+    ok("git add -A && git commit -q -F - <<'EOF'\nfeat: x\nEOF"),
+  );
+  expect(findOpenProblems(events)).toEqual([]);
+});
+
+test('a commit without a passing check before it resolves nothing', () => {
+  const events = timeline(fail('sqlite3 data.db "select x"', 'no such column: x'), [
+    'commit',
+    'wip',
+    { hash: 'abc' },
+  ]);
+  expect(findOpenProblems(events)).toHaveLength(1);
+});
+
+// ---- Task 15b A: the window, the last request and the agent's last update ----
+
+function at(
+  ts: string,
+  kind: EventKind,
+  summary: string,
+  data: Record<string, unknown> = {},
+  source: 'claude' | 'shell' | 'git' | 'codex' = 'claude',
+): WorkEvent {
+  return makeEvent({
+    source,
+    kind,
+    projectRoot: RAHUL_ROOT,
+    ts,
+    sessionRef: source === 'claude' ? 's9' : null,
+    summary,
+    data,
+    dedupeKey: `at${seq++}`,
+  });
+}
+
+test('a later session that only looked around does not hide the last work session', () => {
+  const lookAround = [
+    at(
+      '2026-10-21T08:00:00.000Z',
+      'command',
+      'leftoff resume',
+      { command: 'leftoff resume', exitCode: 0 },
+      'shell',
+    ),
+    at(
+      '2026-10-21T08:00:10.000Z',
+      'command',
+      'git log --oneline',
+      { command: 'git log --oneline', exitCode: 0 },
+      'shell',
+    ),
+    at(
+      '2026-10-21T08:00:20.000Z',
+      'command',
+      'node dist/cli.js',
+      { command: 'node dist/cli.js', exitCode: 0 },
+      'shell',
+    ),
+    at('2026-10-21T08:01:00.000Z', 'session_start', 'Claude Code session started'),
+  ];
+  const f = buildFacts(RAHUL_ROOT, deps([...rahulEvents(), ...lookAround]));
+  expect(f.lastIntent).toBe('Add a forgot-password flow: endpoint, reset token, email');
+  expect(f.openProblems).toHaveLength(1);
+  expect(f.window.to).toBe('2026-10-20T18:30:00.000Z');
+  expect(f.lastActiveAt).toBe('2026-10-21T08:01:00.000Z');
+});
+
+test('a success in a later look-around session still resolves an earlier failure', () => {
+  const later = at(
+    '2026-10-21T08:00:00.000Z',
+    'command',
+    'python scripts/send_test_email.py',
+    {
+      command: 'python scripts/send_test_email.py',
+      exitCode: 0,
+    },
+    'shell',
+  );
+  expect(buildFacts(RAHUL_ROOT, deps([...rahulEvents(), later])).openProblems).toEqual([]);
+});
+
+test('the last request drops pasted-content tags and skips "session continued" summaries', () => {
+  const events = [
+    at(
+      '2026-10-20T10:00:00.000Z',
+      'user_prompt',
+      '<pasted_content id="ab12">\nTask 3 approved. Now add the cache.\n</pasted_content id="ab12">',
+    ),
+    at(
+      '2026-10-20T10:05:00.000Z',
+      'user_prompt',
+      'This session is being continued from a previous conversation that ran out of context. The summary below covers…',
+    ),
+    at('2026-10-20T10:06:00.000Z', 'agent_message', 'Picking up the cache work.'),
+  ];
+  expect(buildFacts(RAHUL_ROOT, deps(events)).lastIntent).toBe(
+    'Task 3 approved. Now add the cache.',
+  );
+});
+
+test("the agent's last update is the start of its final message; a final question is kept", () => {
+  const message =
+    'Task 3 is committed as **`abc1234`** (not pushed). All 40 tests pass. ' +
+    'I also cleaned up the old cache folder and updated the docs. '.repeat(6) +
+    'Should I also remove the old config key?';
+  const events = [
+    at('2026-10-20T10:00:00.000Z', 'user_prompt', 'add the cache'),
+    at('2026-10-20T10:30:00.000Z', 'agent_message', `…${message.slice(-299)}`, {
+      head: message.slice(0, 300),
+    }),
+  ];
+  const f = buildFacts(RAHUL_ROOT, deps(events));
+  expect(f.lastAgent).toEqual({
+    source: 'claude',
+    update: 'Task 3 is committed as `abc1234` (not pushed). All 40 tests pass.',
+    question: 'Should I also remove the old config key?',
+  });
+  expect(f.nextStep).toBe("Answer Claude's question: Should I also remove the old config key?");
+});
+
+test('an offer at the end counts as a question; a message stored before 15b uses its first full sentence', () => {
+  const events = [
+    at('2026-10-20T10:00:00.000Z', 'user_prompt', 'refresh the scripts'),
+    at(
+      '2026-10-20T10:30:00.000Z',
+      'agent_message',
+      "…pied scripts are still the old version. Refreshing them is the same three files as before. I haven't touched them, so tell me if you want that done.",
+    ),
+  ];
+  const f = buildFacts(
+    RAHUL_ROOT,
+    deps(events, { working: { branch: 'main', files: [], diffStat: null } }),
+  );
+  expect(f.lastAgent).toEqual({
+    source: 'claude',
+    update: 'Refreshing them is the same three files as before.',
+    question: "I haven't touched them, so tell me if you want that done.",
+  });
+});
+
+test('a plain final message has no question', () => {
+  const events = [
+    at('2026-10-20T10:00:00.000Z', 'user_prompt', 'x'),
+    at(
+      '2026-10-20T10:30:00.000Z',
+      'agent_message',
+      'Done. The cache is in place and all tests pass.',
+    ),
+  ];
+  expect(buildFacts(RAHUL_ROOT, deps(events)).lastAgent?.question).toBeNull();
+});
+
+test('an interrupt marker is not a request (Task 15b)', () => {
+  const events = [
+    at('2026-10-20T10:00:00.000Z', 'user_prompt', 'add the cache'),
+    at('2026-10-20T10:05:00.000Z', 'user_prompt', '[Request interrupted by user]'),
+    at('2026-10-20T10:06:00.000Z', 'agent_message', 'Stopped.'),
+  ];
+  expect(buildFacts(RAHUL_ROOT, deps(events)).lastIntent).toBe('add the cache');
+});
+
+test('a message saying the agent paused or hit its limit is not a done-claim (Task 15b)', () => {
+  const events = timeline(fail('cargo test -p core', 'test result: FAILED'), [
+    'agent_message',
+    "Your usage limit was reached, so I've paused the build. The plan records where to pick up, so no finished work will be redone.",
+  ]);
+  expect(detectClaimedDone(events, findOpenProblems(events), 0)).toBeNull();
+});
+
+test('the pause check reads the start of a long message too (Task 15b)', () => {
+  const head =
+    "Your usage limit was reached, so I've paused the build. I stopped the one test run.";
+  const events = timeline(fail('cargo test -p core', 'test result: FAILED'), [
+    'agent_message',
+    '…the plan records where to pick up, so no finished work will be redone.',
+    { head },
+  ]);
+  expect(detectClaimedDone(events, findOpenProblems(events), 0)).toBeNull();
 });

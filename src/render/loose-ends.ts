@@ -30,6 +30,9 @@ function claimSummary(c: ClaimedDone, problems: OpenProblem[]): string {
   return [...parts, ...rest].join(' · ');
 }
 
+// At most this many problems per project, newest first (Task 15b).
+const MAX_PROBLEMS = 3;
+
 export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: boolean }): string {
   if (items.length === 0) return 'No loose ends. Everything is committed and passing.';
   const p = painter(opts.color);
@@ -47,10 +50,12 @@ export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: bo
       const said = fit(`  ! Agent said "${tail}`, item.claimedDone.message);
       out.push(`  ${p.yellow('!')} Agent said "${said}${tail}`);
     }
-    for (const o of item.openProblems) {
+    for (const o of item.openProblems.slice(0, MAX_PROBLEMS)) {
       const tail = o.attempts.length > 0 ? ` (${plural(o.attempts.length, 'attempt')})` : '';
       out.push(`  ${p.red('✗')} ${fitProblemLine('  ✗ ', problemText(o), tail)}${p.dim(tail)}`);
     }
+    const more = item.openProblems.length - MAX_PROBLEMS;
+    if (more > 0) out.push(`  • +${more} more ${more === 1 ? 'problem' : 'problems'}`);
     if (item.uncommittedCount > 0)
       out.push(`  • ${plural(item.uncommittedCount, 'uncommitted file')}`);
     if (item.gitUnavailable) out.push(`  ${p.yellow('?')} git status unavailable`);

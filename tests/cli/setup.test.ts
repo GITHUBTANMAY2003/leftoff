@@ -61,7 +61,9 @@ test('setup with scripted answers installs the zsh hook, writes config and the s
   expect(existsSync(paths().config)).toBe(true);
   expect(statSync(paths().home).mode & 0o777).toBe(0o700);
   expect(loadConfig().polish.provider).toBe('off');
-  expect(said.at(-1)).toBe('Open a new terminal to start.');
+  expect(said.at(-1)).toBe(
+    'To undo: run `leftoff uninstall` (it removes the hooks and asks before deleting any data)',
+  );
 });
 
 test('setup writes the shim and copies shell scripts on every run', async () => {
@@ -121,8 +123,10 @@ test('setup runs a catch-up ingest with a 60 s budget and prints one progress li
     }),
   );
   expect(budget).toBe(60_000);
-  const progress = said.filter((l) => l.startsWith('Read '));
-  expect(progress).toEqual(['Read 12 Claude events, 3 Codex events, 840 commands, 25 commits']);
+  const progress = said.filter((l) => l.startsWith('Caught up: '));
+  expect(progress).toEqual([
+    'Caught up: 12 things from Claude Code, 3 from Codex, 840 terminal commands, 25 commits',
+  ]);
   expect(result.progress).toBe(progress[0]);
 });
 
@@ -138,7 +142,7 @@ test('setup survives a failing ingest and says so', async () => {
   );
   expect(result.progress).toBeNull();
   expect(said.join('\n')).toContain('could not read your history yet');
-  expect(said.at(-1)).toBe('Open a new terminal to start.');
+  expect(said.at(-1)).toMatch(/^To undo: run `leftoff uninstall`/);
 });
 
 function fakeClaude(list: string): void {
@@ -156,7 +160,7 @@ const claudeCalls = () =>
 
 test('Claude Code found: the plugin is installed from the repo when confirmed', async () => {
   fakeClaude('[]');
-  const { io, asked } = scripted([true, true, 'off']);
+  const { io, asked } = scripted([true, true, false, 'off']);
   const result = await runSetup(io, env({ hasClaude: true, ...noIngest }));
   expect(asked.some((q) => q.includes('Claude Code'))).toBe(true);
   expect(result.plugin).toBe('installed');
@@ -171,20 +175,25 @@ test('Claude Code found: the plugin is installed from the repo when confirmed', 
 test('Claude Code: already installed, declined, or not found', async () => {
   fakeClaude(JSON.stringify([{ id: 'leftoff@leftoff' }]));
   expect(
-    (await runSetup(scripted([true, 'off']).io, env({ hasClaude: true, ...noIngest }))).plugin,
+    (await runSetup(scripted([true, false, 'off']).io, env({ hasClaude: true, ...noIngest })))
+      .plugin,
   ).toBe('already');
   fakeClaude('[]');
   rmSync(join(t.tmp, 'claude-calls'));
   expect(
-    (await runSetup(scripted([true, false, 'off']).io, env({ hasClaude: true, ...noIngest })))
-      .plugin,
+    (
+      await runSetup(
+        scripted([true, false, false, 'off']).io,
+        env({ hasClaude: true, ...noIngest }),
+      )
+    ).plugin,
   ).toBe('skipped');
   expect(claudeCalls()).toEqual(['plugin list --json']);
   expect((await runSetup(scripted([true, 'off']).io, env({ ...noIngest }))).plugin).toBe(
     'not-found',
   );
   rmSync(join(t.bin, 'claude'));
-  const { io, said } = scripted([true, true, 'off']);
+  const { io, said } = scripted([true, true, false, 'off']);
   const gone = await runSetup(io, env({ hasClaude: true, ...noIngest })); // flag says yes, no binary
   expect(gone.plugin).toBe('claude-not-found');
   expect(said.join('\n')).toContain('claude plugin marketplace add /repo');
@@ -199,15 +208,21 @@ test('Codex logs are noted, found or not', async () => {
   expect(none.said.join('\n')).toContain('No Codex sessions found');
 });
 
-test('polish: the one-line privacy note is shown, and the choice is saved', async () => {
+test('polish: the options are listed with what each sends where, and the choice is saved (Task 15b)', async () => {
   const { io, said } = scripted([true, 'claude-cli']);
   const result = await runSetup(io, env({ ...noIngest }));
   expect(result.polish).toBe('claude-cli');
   const config = loadConfig();
   expect(config.polish).toMatchObject({ provider: 'claude-cli', enabled: ['claude-cli'] });
-  const note = said.find((l) => l.includes('off:')) ?? '';
-  expect(note).toContain('claude-cli');
-  expect(note).toMatch(/send(s)? .*off (this|your) machine|leave/i);
+  const at = said.indexOf('AI summaries turn the brief into a short paragraph. Options:');
+  expect(said.slice(at + 1, at + 7)).toEqual([
+    '  off         nothing leaves your machine',
+    '  claude-cli  the brief facts go to Claude Code and Anthropic, with your Claude login',
+    '  codex-cli   the brief facts go to Codex and OpenAI, with your Codex login',
+    '  ollama      a local model: nothing leaves your machine',
+    '  anthropic   the brief facts go to the Anthropic API, with your ANTHROPIC_API_KEY',
+    '  openai      the brief facts go to the OpenAI API, with your OPENAI_API_KEY',
+  ]);
   // Re-running offers the current choice as the default.
   const second = scripted([true, undefined]);
   expect((await runSetup(second.io, env({ ...noIngest }))).polish).toBe('claude-cli');
@@ -271,4 +286,44 @@ test('setup never touches anything outside the given home and LEFTOFF_HOME', asy
   await runSetup(scripted([true, 'off']).io, env({ ...noIngest }));
   expect(existsSync(join(process.env.CLAUDE_CONFIG_DIR as string))).toBe(before);
   expect(existsSync(join(t.home, '.config', 'fish', 'config.fish'))).toBe(false);
+});
+
+// ---- Task 15b E/F ----
+
+test('Claude Code installed: claude-cli is recommended with Yes as the default, but still asked', async () => {
+  fakeClaude(JSON.stringify([{ id: 'leftoff@leftoff' }]));
+  const yes = scripted([true, undefined]); // zsh hook, then Enter on the recommendation
+  expect((await runSetup(yes.io, env({ hasClaude: true, ...noIngest }))).polish).toBe('claude-cli');
+  expect(yes.asked.at(-1)).toMatch(/^Use Claude Code for AI summaries \(recommended\)\?/);
+  const no = scripted([true, false, 'ollama']);
+  await runSetup(no.io, env({ hasClaude: true, ...noIngest }));
+  expect(no.asked.at(-1)).toBe('Which one?'); // declined: the full list
+});
+
+test('the catch-up line leaves out sources with nothing new', async () => {
+  const { io, said } = scripted([true, 'off']);
+  await runSetup(io, env({ ingest: async () => report({ claude: 119, shell: 2 }) }));
+  expect(said).toContain('Caught up: 119 things from Claude Code, 2 terminal commands');
+  const none = scripted([true, 'off']);
+  await runSetup(none.io, env({ ...noIngest }));
+  expect(none.said).toContain('Caught up: nothing to read yet');
+});
+
+test('setup ends with what it installed, what to try next and how to undo it', async () => {
+  fakeClaude(JSON.stringify([{ id: 'leftoff@leftoff' }]));
+  const { io, said } = scripted([true, undefined]);
+  await runSetup(io, env({ hasClaude: true, ...noIngest }));
+  const at = said.indexOf('Setup finished. Installed:');
+  expect(said.slice(at)).toEqual([
+    'Setup finished. Installed:',
+    '  • the shell hook in ~/.zshrc',
+    '  • the leftoff plugin in Claude Code',
+    '  • AI summaries with claude-cli',
+    `  • your data folder, ${paths().home}`,
+    'Try next:',
+    '  • open a new terminal in a project: a short brief appears when you have been away',
+    '  • leftoff resume: where you left off in this project',
+    '  • leftoff: loose ends across all your projects',
+    'To undo: run `leftoff uninstall` (it removes the hooks and asks before deleting any data)',
+  ]);
 });

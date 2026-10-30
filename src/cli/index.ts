@@ -39,13 +39,22 @@ program
   .option('--project <path>', 'a project other than the current folder')
   .addOption(new Option('--json', 'print the facts as JSON').conflicts('md'))
   .addOption(new Option('--md', 'print Markdown').conflicts('json'))
+  .option('--details', 'show every command, error, attempt and file')
   .option('--polish', 'write the AI summary now (needs a polish provider from setup)')
-  .action(async (o: { project?: string; json?: boolean; md?: boolean; polish?: boolean }) => {
-    const format = o.json ? 'json' : o.md ? 'md' : 'terminal';
-    const polish = Boolean(o.polish);
-    const notify = (line: string) => process.stderr.write(line + '\n');
-    print(await runResume({ cwd: process.cwd(), project: o.project, format, polish, notify }));
-  });
+  .action(
+    async (o: {
+      project?: string;
+      json?: boolean;
+      md?: boolean;
+      details?: boolean;
+      polish?: boolean;
+    }) => {
+      const format = o.json ? 'json' : o.md ? 'md' : o.details ? 'details' : 'terminal';
+      const polish = Boolean(o.polish);
+      const notify = (line: string) => process.stderr.write(line + '\n');
+      print(await runResume({ cwd: process.cwd(), project: o.project, format, polish, notify }));
+    },
+  );
 
 program
   .command('standup')

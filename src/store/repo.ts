@@ -16,6 +16,8 @@ export interface Repo {
   eventsSince(sinceIso: string): WorkEvent[];
   projects(): { root: string; lastTs: string; count: number }[];
   lastActivity(root: string): string | null;
+  // Whether the project has any event from this source (loose ends, Task 15b).
+  hasSource(root: string, source: Source): boolean;
   // The newest event matching a source and/or kind; null if none (doctor).
   lastEventTs(filter: { source?: Source; kind?: EventKind }): string | null;
   countEvents(root?: string): number;
@@ -124,6 +126,9 @@ export function createRepo(db: Database): Repo {
   const lastActivity = db.prepare<[string], { ts: string | null }>(
     'SELECT MAX(ts) AS ts FROM events WHERE project_root = ?',
   );
+  const hasSource = db.prepare<[string, string], { one: number }>(
+    'SELECT 1 AS one FROM events WHERE project_root = ? AND source = ? LIMIT 1',
+  );
   const lastEventTs = db.prepare<
     { source: string | null; kind: string | null },
     { ts: string | null }
@@ -184,6 +189,7 @@ export function createRepo(db: Database): Repo {
     eventsSince: (sinceIso) => toEvents(since.all(sinceIso)),
     projects: () => projects.all(),
     lastActivity: (root) => lastActivity.get(root)?.ts ?? null,
+    hasSource: (root, source) => hasSource.get(root, source) !== undefined,
     lastEventTs: (filter) =>
       lastEventTs.get({ source: filter.source ?? null, kind: filter.kind ?? null })?.ts ?? null,
     countEvents: (root) => (root === undefined ? countAll.get() : countProject.get(root))?.n ?? 0,

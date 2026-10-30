@@ -234,7 +234,7 @@ const isFileArgument = (w: string) => w.includes('/') || /\.\w+$/.test(w);
 
 // The words of the one real step of a command (setup steps and runner prefixes
 // skipped), or null when it has several steps or lines.
-function programWords(cmd: string): string[] | null {
+export function programWords(cmd: string): string[] | null {
   // A single pipeline into a text filter is the command before the filter.
   const base = endsWithFilter(cmd) ? withoutFilters(cmd) : cmd;
   const steps: string[][] = [[]];

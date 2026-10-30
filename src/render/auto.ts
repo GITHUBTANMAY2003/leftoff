@@ -1,31 +1,19 @@
-import { problemText, type BriefFacts } from '../brief/facts.ts';
-import { fit, fitProblemLine, header, painter } from './terminal.ts';
+import type { BriefFacts } from '../brief/facts.ts';
+import { narrativeLines } from './narrative.ts';
+import { LINE_WIDTH, painter } from './terminal.ts';
 
-// The automatic brief on terminal open (spec §1.8): the header, then at most
-// the uncommitted-file count, the top open problem and the next step, then
-// the pointer to `leftoff resume`. Short on purpose: it appears unasked.
+// The automatic brief on terminal open (spec §1.8): the narrative brief (Task
+// 15b), a cached polished summary first when its facts still match, then the
+// pointer to `leftoff resume`. Only the first line is bold.
 
-const INDENT = '  ';
-
-export function renderAutoBrief(f: BriefFacts, opts: { color: boolean; now?: Date }): string {
-  const now = opts.now ?? new Date();
+export function renderAutoBrief(
+  f: BriefFacts,
+  opts: { color: boolean; now?: Date; polished?: string | null },
+): string {
   const p = painter(opts.color);
-  const lines = [p.bold(fit('', header(f, now)))];
-  const files = f.unfinished.files.length;
-  if (files > 0) lines.push(`${INDENT}• ${files} uncommitted file${files === 1 ? '' : 's'}`);
-  // One problem fits: the one the next step is about, else the first.
-  const verified = /^Verify: `(.*)` still failing$/.exec(f.nextStep ?? '')?.[1];
-  const top = f.openProblems.find((p) => p.command === verified) ?? f.openProblems[0];
-  if (top) {
-    const rest = f.openProblems.length - 1;
-    const more = rest > 0 ? ` (+${rest} more problem${rest === 1 ? '' : 's'})` : '';
-    lines.push(`${INDENT}✗ ${fitProblemLine(`${INDENT}✗ `, problemText(top), more)}${more}`);
-  }
-  // A next step that resolves or verifies that problem would only repeat it.
-  const repeats =
-    top !== undefined &&
-    (f.nextStep === `Resolve: ${problemText(top)}` || verified === top.command);
-  if (f.nextStep && !repeats) lines.push(`${INDENT}→ ${fit(`${INDENT}→ `, f.nextStep)}`);
-  lines.push('Run `leftoff resume` for details');
-  return lines.join('\n');
+  const [first = '', ...rest] = narrativeLines(f, opts.polished ?? null, {
+    now: opts.now ?? new Date(),
+    width: LINE_WIDTH,
+  });
+  return [p.bold(first), ...rest, 'Run `leftoff resume` for details'].join('\n');
 }

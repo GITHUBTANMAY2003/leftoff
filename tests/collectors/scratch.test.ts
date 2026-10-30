@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest';
-import { isScratchCommand } from '../../src/collectors/scratch.ts';
+import {
+  isAgentToolError,
+  isScratchCommand,
+  referencesTempDir,
+} from '../../src/collectors/scratch.ts';
 import { commandKey } from '../../src/model/event.ts';
 
 // Scratch work (owner decision after Task 13): one-off agent commands whose
@@ -55,7 +59,7 @@ test.each([
   ['make', 'make'],
   // Found on real data (owner's ~/.leftoff): setup steps and runner prefixes are
   // not the program; a chain of several steps only matches itself.
-  ['source "$HOME/.cargo/env" && cargo test -p looplint_adapters', 'cargo test'],
+  ['source "$HOME/.cargo/env" && cargo test -p payments_adapters', 'cargo test'],
   ['export A=1 && set -e && make deploy', 'make deploy'],
   ['uv run --no-sync ruff format --check src/a.py', 'ruff format'],
   ['uv run ruff check src/dasquake/streaming.py', 'ruff check'],
@@ -73,4 +77,36 @@ test.each([
   ['git diff --check\ngit status --short', 'git diff --check git status --short'], // multi-line: itself only
 ])('commandKey(%j) → %j', (command, expected) => {
   expect(commandKey(command)).toBe(expected);
+});
+
+// Temp folders (Task 15b B): a command that touches a temp folder is scratch,
+// from any source.
+test.each([
+  ['cat /tmp/out.log', true],
+  ['sleep 5; cat /private/tmp/agent-1/tasks/x.output', true],
+  ['ls /var/folders/xy/T/build-1', true],
+  ['SP=/home/u/.cache/agent/scratchpad/run && node $SP/a.js', true],
+  ['B=$(mktemp -d) && cp src/a.ts $B/', true],
+  ['cp a "$TMPDIR/x"', true],
+  ['npm test', false],
+  ['ls src/tmp/fixtures', false], // a project folder named tmp
+  ['cat docs/tmp.md', false],
+])('referencesTempDir(%j) → %s', (command, expected) => {
+  expect(referencesTempDir(command)).toBe(expected);
+});
+
+// Agent tool errors (Task 15b B): the agent's tool was refused or misused;
+// never a project problem.
+test.each([
+  ['<tool_use_error>Blocked: sleep 100 followed by cat</tool_use_error>', true],
+  ['Blocked: sleep 100', true],
+  ["The user doesn't want to proceed with this tool use. The tool use was rejected", true],
+  ['Permission to use Bash with command rm -rf x has been denied.', true],
+  ['exec command rejected by user', true],
+  ['[Request interrupted by user for tool use]', true],
+  ['Error: EACCES: permission denied, open /etc/hosts', false], // the project's own problem
+  ['bash: ./run.sh: Permission denied', false],
+  ['1 failed, 4 passed', false],
+])('isAgentToolError(%j) → %s', (text, expected) => {
+  expect(isAgentToolError(text)).toBe(expected);
 });

@@ -29,7 +29,7 @@ test('agent context starts and ends with exact lines and is ≤ 4000 chars even 
   expect(out).toMatch(/^- \+\d+ more$/m);
   expect(out).toContain('src/module-0/file-0.ts'); // shortened, not dropped
   expect(out).toContain(
-    'Suggested next step: Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+    'Pick up with: Get `python scripts/send_test_email.py` working (SMTP connection refused)',
   );
 });
 
@@ -40,7 +40,7 @@ test('the agent is told what was already tried, so it does not retry it (§1.1)'
   expect(out).toContain('feature/forgot-password');
   expect(out).toContain('email_service.py');
   expect(out).toContain(
-    'Suggested next step: Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+    'Pick up with: Get `python scripts/send_test_email.py` working (SMTP connection refused)',
   );
 });
 
@@ -59,7 +59,7 @@ test('the 4000 limit holds for emoji-heavy text (UTF-16 length) without splittin
   expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/); // no lone high surrogate
 });
 
-test('lists are never emptied: long items are shortened, at most 5 shown, then "+N more"', () => {
+test('lists are never emptied: long items are shortened, at most 3 problems and 5 files, then "+N more"', () => {
   const long = (i: number) => `npm run task-${i} ${'x'.repeat(900)}`;
   const f: BriefFacts = {
     ...rahulFacts(),
@@ -87,7 +87,7 @@ test('lists are never emptied: long items are shortened, at most 5 shown, then "
   };
   const problems = section('Open problems (unresolved):');
   expect(problems.length).toBeGreaterThanOrEqual(3);
-  expect(problems.length).toBeLessThanOrEqual(6);
+  expect(problems.length).toBeLessThanOrEqual(4); // at most 3 problems (Task 15b), then "+N more"
   expect(problems.at(-1)).toMatch(/^- \+\d+ more$/);
   expect(problems[0]).toMatch(/^- `npm run task-0 x+…/);
   const files = section('Uncommitted changes:');
@@ -133,7 +133,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
   try {
     const repo = createRepo(db);
     const command =
-      'source "$HOME/.cargo/env" && cargo test -p looplint_adapters | grep -E "^error" -A6';
+      'source "$HOME/.cargo/env" && cargo test -p billing_adapters | grep -E "^error" -A6';
     repo.insertEvents([
       makeEvent({
         source: 'shell',
@@ -153,7 +153,8 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
       working: null,
       now: RAHUL_NOW,
     });
-    const want = '`cargo test -p looplint_adapters` — test result: FAILED';
+    const want = '`cargo test -p billing_adapters` — test result: FAILED';
+    const cleaned = '`cargo test -p billing_adapters`';
     const outputs = [
       renderTerminal(f, null, { color: false, now: RAHUL_NOW }),
       renderAutoBrief(f, { color: false, now: RAHUL_NOW }),
@@ -176,7 +177,8 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
       renderAgentContext(f, null, { now: RAHUL_NOW }),
     ];
     for (const out of outputs) {
-      expect(out).toContain(want);
+      // the auto brief says it in words and names the command in its next step
+      expect(out).toContain(out === outputs[1] ? cleaned : want);
       expect(out).not.toContain('source "$HOME');
       expect(out).not.toContain('grep -E');
     }
@@ -184,4 +186,13 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
     db.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the agent context opens with the narrative brief (Task 15b)', () => {
+  const lines = renderAgentContext(rahulFacts(), null, { now: RAHUL_NOW }).split('\n');
+  expect(lines.slice(2, 5)).toEqual([
+    'myapp · 14h ago · branch feature/forgot-password',
+    'You asked: Add a forgot-password flow: endpoint, reset token, email',
+    "Claude's last update: The SMTP server still refuses the connection on both ports.",
+  ]);
 });
