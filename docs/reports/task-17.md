@@ -39,3 +39,12 @@ This is the first commit of Task 17. It adds your answers after Task 16 and the 
 - one background `claude -p` polish that timed out after 60 s (Oct 31, 09:00 UTC).
 
 If polish timeouts repeat during the week, log them.
+
+## 5. Step 1: `npm link` (owner-approved, 2026-11-01)
+
+- `npm run build && npm link`. `leftoff` is now `/opt/homebrew/bin/leftoff`, a symlink to this repo's `dist/cli.js`; `leftoff --version` prints `0.0.1`. Nothing else outside the repo changed.
+- **Timings with the linked command, on your real data:**
+  - `leftoff resume` in `~/leftoff`: 360–460 ms over 5 runs.
+  - `leftoff` (loose ends): 0.75 s, within the 1.5 s budget.
+- The `resume` numbers are not a clean "no new data" measurement: this Claude session writes to its transcript between runs, so every run had something new to read. The clean measurement is the checklist's daily item 3, run when no agent is working. If it is still over 300 ms there, log it and I'll profile it.
+- **Second finding** (logged): after a short reply such as "Yes, run npm link", the next step reads `Continue: Yes, run npm link`. Worth checking after a real break before deciding on a fix.

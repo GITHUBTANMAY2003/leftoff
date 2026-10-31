@@ -30,4 +30,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 17: Dogfooding (owner's week of use).** Waiting for: the owner's go-ahead for `npm link` (Step 1), then the owner's log entries in `docs/dogfood-log.md`. Each "no" becomes a failing test, a fix and a `fix(<module>): …` commit. Open questions in the Task 17 report §9.
+**Task 17: Dogfooding (owner's week of use).** `npm link` done (Step 1, 2026-11-01). Waiting for the owner's log entries in `docs/dogfood-log.md`. Each "no" becomes a failing test, a fix and a `fix(<module>): …` commit. Open questions in the Task 17 report §9.
