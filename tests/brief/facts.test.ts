@@ -970,3 +970,27 @@ test('the pause check reads the start of a long message too (Task 15b)', () => {
   ]);
   expect(detectClaimedDone(events, findOpenProblems(events), 0)).toBeNull();
 });
+
+// ---- after Task 16 (owner answer 2): you stopping your own command is not a problem ----
+
+test.each([129, 130, 143])(
+  'exit %i (hangup, Ctrl-C, terminate) from your own shell is not a problem; from an agent it is',
+  (exitCode) => {
+    const [shellFail, agentFail, realFail] = timeline(
+      [
+        'command_failed',
+        'afplay exited',
+        { command: 'for f in *.m4a; do afplay "$f"; done', exitCode },
+      ],
+      ['command_failed', 'npm test exited', { command: 'npm test', exitCode, error: '' }],
+      ['command_failed', 'make exited', { command: 'make deploy', exitCode: 2 }],
+    );
+    const fromShell = (e: WorkEvent) => ({ ...e, source: 'shell' as const });
+    const problems = findOpenProblems([
+      fromShell(shellFail as WorkEvent),
+      agentFail as WorkEvent,
+      fromShell(realFail as WorkEvent),
+    ]);
+    expect(problems.map((p) => p.command)).toEqual(['make deploy', 'npm test']);
+  },
+);

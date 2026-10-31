@@ -1105,6 +1105,7 @@ As built; see `docs/reports/task-15b.md`. Spec changes: §1.8 narrative brief; t
 - **Not open problems:** agent tool errors (`<tool_use_error>`, `Blocked:`, permission denials, "The user doesn't want to proceed…", "rejected by user"); any command that references a temp folder (`/tmp`, `/private/tmp`, `/var/folders`, a `scratchpad` path, `$TMPDIR`, `mktemp`), from any source.
 - **Resolution:** a passing whole-project check (a test/lint/format/type/build/check command with no file arguments, no test filter, nothing after `--`) resolves every earlier failure of its category; a check script resolves all of them. A commit (git, or a successful `git commit` command) after a passing check resolves every failure from before that check.
 - **Claims:** a message saying the agent paused or hit a usage/rate limit is not a done-claim.
+- **You stopping your own command (owner decision after Task 16):** exit 129 (hangup), 130 (Ctrl-C) or 143 (terminate) from your shell is not an open problem; from an agent command it still is.
 - **Last request / last update:** pasted-content tags are dropped; "session is being continued" summaries and `[Request interrupted by user]` are not requests. Agent messages keep their end as the summary and their start in `data.head`; Claude subagent (sidechain) prompts and replies are not recorded (their commands and edits are).
 - **At most 3 problems per project**, newest first (`--details`, loose ends, agent context; the narrative counts the rest).
 - **Loose ends:** only real projects: not under a temp dir or scratchpad, not hash-named, not inside an agent config dir (`.claude`, `.codex`, …), and not a non-git folder without terminal activity.
@@ -1184,7 +1185,10 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
   - every bug found has a regression test and is fixed; every beta issue is fixed or explicitly deferred in `CHANGELOG.md`
   - `leftoff uninstall` tested once on the owner's machine and on a beta tester's, then reinstalled
   - **brief rating (owner decision after Task 15b):** each beta tester, after a break of at least a day, rates their brief: "Did it correctly tell you where you left off and what to do next?" Release only if at least 4 of 5 briefs get "yes". Ratings are recorded in `docs/dogfood-log.md`.
-- [ ] **Step 7: Commit** `git commit -m "chore: dogfooding log and fixes"`.
+- [ ] **Step 7: Final checklist** (owner decision after Task 16): delete the pre-re-read backup, `rm ~/.leftoff/leftoff-before-claude-reread.db` (kept, mode 600, until Task 17 ends).
+- [ ] **Step 8: Commit** `git commit -m "chore: dogfooding log and fixes"`.
+
+**As started:** the first commit adds `docs/dogfood-log.md` (one entry per brief: date, project, time away, the yes/no rating, what was wrong) and `docs/dogfood-checklist.md` (daily, weekly and once-only checks), plus the owner's answers after Task 16. `npm link` runs only after the owner says so.
 
 ---
 

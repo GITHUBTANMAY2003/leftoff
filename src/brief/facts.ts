@@ -216,7 +216,17 @@ interface ProblemGroup {
   lastIndex: number;
 }
 
-const isNotAProblem = (e: WorkEvent) => isProbe(e) || isScratch(e) || isAgentToolFailure(e); // stored, not a loose end
+// You stopped your own command (owner decision after Task 16): exit 129
+// (hangup), 130 (Ctrl-C) or 143 (terminate) from your shell. An agent's
+// command that ends this way still counts.
+const USER_INTERRUPTS = new Set([129, 130, 143]);
+const isUserInterrupt = (e: WorkEvent) =>
+  e.source === 'shell' &&
+  typeof e.data.exitCode === 'number' &&
+  USER_INTERRUPTS.has(e.data.exitCode);
+
+const isNotAProblem = (e: WorkEvent) =>
+  isProbe(e) || isScratch(e) || isAgentToolFailure(e) || isUserInterrupt(e); // stored, not a loose end
 
 // An event that is a commit: from git, or an agent's or your own `git commit`.
 const isCommit = (e: WorkEvent) =>
