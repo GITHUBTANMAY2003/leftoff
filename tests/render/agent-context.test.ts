@@ -196,7 +196,7 @@ test('the agent context opens with the brief sized by the work (medium here)', (
   const lines = renderAgentContext(rahulFacts(), null, { now: RAHUL_NOW }).split('\n');
   expect(lines.slice(2, 5)).toEqual([
     'myapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password',
-    'You were building forgot password.',
+    'You were building forgot password: Added reset-token migration.',
     'Done: 2 commits: Added reset-token migration; Built POST /auth/forgot-password endpoint',
   ]);
 });

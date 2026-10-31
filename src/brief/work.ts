@@ -194,6 +194,20 @@ function commitTopic(subjects: string[]): string | null {
 // How a folder reads: "." (files at the project root) is "the top folder".
 export const folderName = (path: string) => (path === '.' ? 'the top folder' : path);
 
+// A topic under 3 words ("working on brief", "building forgot password") says
+// little: the newest commit subject follows it (owner decision after 15c).
+// A subject already quoted ("working on: …") is left alone.
+const MIN_TOPIC_WORDS = 3;
+const VERB =
+  /^(building|fixing|refactoring|speeding up|writing docs:|testing|doing chores:|working on)\s+/;
+function withNewestCommit(phrase: string | null, subjects: string[]): string | null {
+  if (phrase === null || phrase.startsWith('working on:') || subjects.length === 0) return phrase;
+  const topic = phrase.replace(VERB, '').replace(/\s*\([^)]*\)$/, '');
+  const words = topic.split(/[\s,]+/).filter((w) => w !== '' && w !== 'and');
+  if (words.length >= MIN_TOPIC_WORDS) return phrase;
+  return `${phrase}: ${shortSubject(subjects.at(-1) as string)}`;
+}
+
 export const shortSubject = (subject: string) => subject.replace(COMMIT_PREFIX, '').trim();
 
 // ---- time ----
@@ -238,8 +252,7 @@ export function summarizeWork(
     .map((e) => substantiveSentence(e.summary))
     .find((s) => s !== null);
   const workingOn =
-    branchPhrase(opts.branch) ??
-    commitTopic(rawCommits) ??
+    withNewestCommit(branchPhrase(opts.branch) ?? commitTopic(rawCommits), rawCommits) ??
     (request ? `working on: ${request}` : null) ??
     (folders.some((f) => f.path !== '.')
       ? `working in ${joinAnd(

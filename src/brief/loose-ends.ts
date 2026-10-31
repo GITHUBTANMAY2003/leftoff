@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, join, sep } from 'node:path';
 import type { readWorkingState, WorkingState } from '../collectors/git.ts';
 import type { Config } from '../core/config.ts';
@@ -22,6 +22,7 @@ const byTime = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export interface ProjectFilter {
   tempDirs: string[];
   isGitRepo: (root: string) => boolean;
+  home?: string; // your home folder, never a project (default: os.homedir())
 }
 const AGENT_DIRS = new Set([
   '.claude',
@@ -49,6 +50,8 @@ export const defaultProjectFilter = (): ProjectFilter => ({
 });
 
 export function isRealProject(root: string, usedInTerminal: boolean, f: ProjectFilter): boolean {
+  // Your home folder and / are never projects (owner decision after Task 15c).
+  if (root === sep || root === (f.home ?? homedir())) return false;
   const segments = root.split(sep);
   if (f.tempDirs.some((d) => root === d || root.startsWith(d.endsWith(sep) ? d : d + sep))) {
     return false;

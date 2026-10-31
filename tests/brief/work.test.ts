@@ -76,7 +76,8 @@ describe('Rust, large: two days, several commits', () => {
   });
 
   test('an undescriptive branch (feat/m2) gives way to the recurring commit scope', () => {
-    expect(w.workingOn).toBe('working on parser'); // lexer has one commit only
+    // lexer has one commit only; a one-word topic gets the newest subject
+    expect(w.workingOn).toBe('working on parser: parser design notes');
   });
 });
 
@@ -99,7 +100,7 @@ describe('Python, medium: one afternoon, one commit', () => {
   test('medium, with the descriptive branch in words', () => {
     expect(w.size).toBe('medium');
     expect(w.activeMinutes).toBe(100);
-    expect(w.workingOn).toBe('fixing retry timeouts (issue 42)');
+    expect(w.workingOn).toBe('fixing retry timeouts (issue 42): Retry on timeouts');
     expect(w.topFolders).toEqual([
       { path: 'src/svc', files: 6 },
       { path: 'tests', files: 3 },
@@ -231,7 +232,7 @@ test('commit scopes say what it was about only when they recur; else the first s
       'feat(kb): d',
       'feat(adapters): e',
     ]),
-  ).toBe('working on semantic and kb');
+  ).toBe('working on semantic and kb: e');
 });
 
 test('hedges and musings are not requests', () => {
@@ -282,4 +283,30 @@ test('short but with several commits, or spread over two days, is not small', ()
     ev(root, '2026-10-21T10:00:00.000Z', 'agent_message', 'b'),
   ];
   expect(summarizeWork(twoDays, { root, branch: null, gapMinutes: 45 }).size).toBe('medium');
+});
+
+test('a topic of 3 words or more stands alone; a shorter one gets the newest commit subject', () => {
+  const root = '/w/app';
+  const commits = (branch: string, subjects: string[]) =>
+    summarizeWork(
+      subjects.map((s, i) => ev(root, `2026-10-20T10:0${i}:00.000Z`, 'commit', s)),
+      { root, branch, gapMinutes: 45 },
+    ).workingOn;
+  expect(commits('main', ['feat(brief): a', 'feat(brief): b', 'docs: c'])).toBe(
+    'working on brief: c',
+  );
+  expect(commits('fix/s3vectors-error-mapping', ['Map errors'])).toBe(
+    'fixing s3vectors error mapping',
+  );
+  expect(
+    commits('main', [
+      'feat(semantic): a',
+      'feat(semantic): b',
+      'feat(kb): c',
+      'feat(kb): d',
+      'fix(adapters): e',
+      'fix(adapters): f',
+    ]),
+  ).toBe('working on semantic, kb and adapters');
+  expect(commits('feature/forgot-password', [])).toBe('building forgot password'); // no commit to add
 });

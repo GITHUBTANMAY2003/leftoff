@@ -229,3 +229,19 @@ test('a project shows the time you last worked on it, not its last look-around (
   const [entry] = build();
   expect(entry?.lastActiveAt).toBe(new Date(NOW.getTime() - 6 * 24 * HOUR).toISOString());
 });
+
+test('your home folder and / are never projects (owner decision after 15c)', () => {
+  repo.insertEvents([
+    { ...failure('/home/u', 2, 'make a'), source: 'shell' as const, dedupeKey: 'home-1' },
+    { ...failure('/', 2, 'make b'), source: 'shell' as const, dedupeKey: 'root-1' },
+    failure('/home/u/app', 2, 'make c'),
+  ]);
+  const items = buildLooseEnds({
+    repo,
+    config,
+    now: NOW,
+    readWorking: () => ({ branch: null, files: [], diffStat: null }),
+    filter: { tempDirs: [], isGitRepo: () => true, home: '/home/u' },
+  });
+  expect(items.map((l) => l.project.root)).toEqual(['/home/u/app']);
+});

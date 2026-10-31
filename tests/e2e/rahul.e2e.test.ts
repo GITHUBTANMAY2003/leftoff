@@ -40,7 +40,7 @@ test('hook claude-session-start returns the same brief as context for the agent'
   expect(lines.at(-1)).toBe(
     'This is an automatic summary of earlier work. Verify against the code before relying on it.',
   );
-  expect(context).toContain('You were building forgot password.');
+  expect(context).toContain('You were building forgot password: Added reset-token migration.');
   expect(context).toContain(
     'Stopped: `python scripts/send_test_email.py` — SMTP connection refused · 1 uncommitted file',
   );
@@ -75,7 +75,7 @@ test('bare `leftoff` lists the project with its open problem and uncommitted fil
       'Loose ends across 1 project',
       '',
       'myapp (feature/forgot-password) · last worked 14h ago',
-      '  You were building forgot password.',
+      '  You were building forgot password: Added reset-token migration.',
       '  Next: Get `python scripts/send_test_email.py` working (also: 1 uncommitted file)',
       '',
       'Run `leftoff resume` inside a project for details',

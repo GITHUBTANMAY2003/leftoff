@@ -3,7 +3,12 @@ import type { WorkingState } from '../collectors/git.ts';
 import type { Config } from '../core/config.ts';
 import type { CollectorName, IngestReport } from '../ingest/ingest.ts';
 import { isProbeFailure } from '../collectors/probes.ts';
-import { isAgentToolError, isScratchCommand, referencesTempDir } from '../collectors/scratch.ts';
+import {
+  isAgentToolError,
+  isScratchCommand,
+  isStoppedLongRunning,
+  referencesTempDir,
+} from '../collectors/scratch.ts';
 import { isFilteredExit } from '../collectors/test-failures.ts';
 import {
   chainSteps,
@@ -237,14 +242,22 @@ interface ProblemGroup {
 // You stopped your own command (owner decision after Task 16): exit 129
 // (hangup), 130 (Ctrl-C) or 143 (terminate) from your shell. An agent's
 // command that ends this way still counts.
-const USER_INTERRUPTS = new Set([129, 130, 143]);
+// Exit 127 (command not found) from your shell is a typo (owner decision after
+// Task 15c); from an agent it is a missing tool and still counts.
+const USER_INTERRUPTS = new Set([127, 129, 130, 143]);
 const isUserInterrupt = (e: WorkEvent) =>
   e.source === 'shell' &&
   typeof e.data.exitCode === 'number' &&
   USER_INTERRUPTS.has(e.data.exitCode);
 
+// A server, watcher or `tail -f` stopped by a signal, from any source.
+const isStoppedServer = (e: WorkEvent) =>
+  typeof e.data.command === 'string' &&
+  typeof e.data.exitCode === 'number' &&
+  isStoppedLongRunning(e.data.command, e.data.exitCode);
+
 const isNotAProblem = (e: WorkEvent) =>
-  isProbe(e) || isScratch(e) || isAgentToolFailure(e) || isUserInterrupt(e); // stored, not a loose end
+  isProbe(e) || isScratch(e) || isAgentToolFailure(e) || isUserInterrupt(e) || isStoppedServer(e); // stored, not a loose end
 
 // An event that is a commit: from git, or an agent's or your own `git commit`.
 const isCommit = (e: WorkEvent) =>

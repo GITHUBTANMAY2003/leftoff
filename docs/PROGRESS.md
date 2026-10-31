@@ -31,4 +31,4 @@ The commit hash for each task is filled in by the next task's commit (plan revie
 
 ## Next task
 
-**Task 17: Dogfooding (owner's week of use).** `npm link` done (Step 1, 2026-11-01). Waiting for the owner's log entries in `docs/dogfood-log.md`. Each "no" becomes a failing test, a fix and a `fix(<module>): …` commit. Open questions in the Task 17 report §9.
+**Owner answers after 15c — partly done (commit "fix(brief): owner answers after 15c").** Done: a topic under 3 words gets the newest commit subject; long-running processes (serve, dev, start, watch, `tail -f`, servers on ports) stopped by 130/137/143 are not problems, from any source; exit 127 from your own shell is ignored; your home folder and `/` are never loose ends. The home-folder test was written together with its fix (not seen failing first). **Still to do:** large briefs show up to 3 commit subjects one per line; the README one-liner when there are no commits; a one-time backfill of commit file lists limited to the work window; the home folder in the auto brief. Then Task 17 dogfooding continues.

@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { chainSteps, normalizeCommand, pipelineHead } from '../model/event.ts';
+import { chainSteps, normalizeCommand, pipelineHead, programWords } from '../model/event.ts';
 import { isProbeCommand } from './probes.ts';
 
 // Scratch work (owner decision after Task 13): one-off commands an agent runs
@@ -89,4 +89,43 @@ const AGENT_TOOL_ERRORS = [
 ];
 export function isAgentToolError(text: string): boolean {
   return AGENT_TOOL_ERRORS.some((p) => p.test(text));
+}
+
+// Long-running processes (owner decision after Task 15c): servers, dev
+// servers, watchers and `tail -f`. Stopping one with a signal (130 Ctrl-C,
+// 137 kill, 143 terminate) is how they end, not a failure, from any source.
+const LONG_RUNNING_WORDS = new Set([
+  'serve',
+  'server',
+  'runserver',
+  'dev',
+  'start',
+  'watch',
+  'preview',
+  'up',
+  'develop',
+]);
+const LONG_RUNNING_PROGRAMS = new Set([
+  'uvicorn',
+  'gunicorn',
+  'hypercorn',
+  'nodemon',
+  'http-server',
+  'live-server',
+]);
+const STOP_SIGNALS = new Set([130, 137, 143]);
+
+export function isLongRunning(command: string): boolean {
+  const words = programWords(command) ?? normalizeCommand(command).split(' ');
+  const [program = '', ...rest] = words;
+  if (LONG_RUNNING_PROGRAMS.has(basename(program))) return true;
+  if (program === 'tail' && rest.some((w) => /^-[a-zA-Z]*[fF]/.test(w))) return true;
+  if (words.slice(0, 4).some((w) => LONG_RUNNING_WORDS.has(w) || /\.server$/.test(w))) return true;
+  return rest.some(
+    (w) => w === '--watch' || w === '--port' || w === '--host' || w.startsWith('--port='),
+  );
+}
+
+export function isStoppedLongRunning(command: string, exitCode: number): boolean {
+  return STOP_SIGNALS.has(exitCode) && isLongRunning(command);
 }

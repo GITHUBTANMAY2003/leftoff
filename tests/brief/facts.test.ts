@@ -1033,3 +1033,59 @@ test('the error shown is the first line that reads like an error, not echoed com
   const [p] = findOpenProblems(timeline(fail('make run-ci', output)));
   expect(p?.error).toBe('ERROR collecting tests/test_kernel.py');
 });
+
+// ---- after 15c (owner answers 3 and 5) ----
+
+test.each([
+  ['ollama serve', 137],
+  ['npm run dev', 130],
+  ['pnpm dev', 143],
+  ['npm start', 143],
+  ['tail -f logs/app.log', 130],
+  ['python -m http.server 8000', 137],
+  ['npx vite --port 5173', 143],
+  ['uvicorn app.main:app --reload', 137],
+  ['docker compose up', 130],
+  ['cargo watch -x test', 143],
+])(
+  'a long-running process stopped by a signal is not a problem: %s (exit %i)',
+  (command, exitCode) => {
+    const [agent, shell] = timeline(
+      ['command_failed', `${command} exited`, { command, exitCode, error: '' }],
+      ['command_failed', `${command} exited`, { command, exitCode, error: '' }],
+    );
+    expect(
+      findOpenProblems([agent as WorkEvent, { ...(shell as WorkEvent), source: 'shell' }]),
+    ).toEqual([]);
+  },
+);
+
+test('a short command killed by a signal, or a server that fails on its own, still counts', () => {
+  const problems = findOpenProblems(
+    timeline(
+      ['command_failed', 'x', { command: 'cargo test', exitCode: 137, error: '' }],
+      [
+        'command_failed',
+        'y',
+        { command: 'ollama serve', exitCode: 1, error: 'address already in use' },
+      ],
+    ),
+  );
+  expect(problems.map((p) => p.command)).toEqual(['ollama serve', 'cargo test']);
+});
+
+test('exit 127 (command not found) from your own shell is a typo, not a problem; from an agent it counts', () => {
+  const [typo, agent] = timeline(
+    ['command_failed', 'typo', { command: 'cd~/app', exitCode: 127 }],
+    [
+      'command_failed',
+      'agent',
+      { command: 'pnpm install', exitCode: 127, error: 'pnpm: command not found' },
+    ],
+  );
+  const problems = findOpenProblems([
+    { ...(typo as WorkEvent), source: 'shell' },
+    agent as WorkEvent,
+  ]);
+  expect(problems.map((p) => p.command)).toEqual(['pnpm install']);
+});
