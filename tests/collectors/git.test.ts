@@ -414,3 +414,26 @@ test('soft deadline: one project per run; the rest are reached in later runs', a
   expect(runs).toBe(3);
   expect(seen.sort()).toEqual(roots.map((_, i) => `commit in ${'abc'[i]}`));
 });
+
+test('the project being resumed is read first, even if it was checked most recently', async () => {
+  const [a, b, c] = ['a', 'b', 'c'].map((n) => {
+    const root = initRepo(tmp, n);
+    commit(root, `commit in ${n}`);
+    track(root);
+    return root;
+  }) as [string, string, string];
+  await commitResult(await gitCollector.collect(ctx)); // every repo read once
+  // c was checked last of all
+  const cursor = JSON.parse(ctx.repo.getCursor('git', c) as string) as Record<string, unknown>;
+  ctx.repo.setCursor(
+    'git',
+    c,
+    JSON.stringify({ ...cursor, checkedAt: '2999-01-01T00:00:00.000Z' }),
+  );
+  commit(c, 'new in c');
+  commit(a, 'new in a');
+  ctx.deadline = 0; // only one project fits
+  ctx.projectFilter = c; // c was checked last, but it is the one being resumed
+  expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['new in c']);
+  expect(b).toBeTruthy();
+});

@@ -284,7 +284,13 @@ export const gitCollector: Collector = {
     if (ctx.projectFilter) roots.add(ctx.projectFilter);
     const queue = [...roots]
       .map((root) => ({ root, cursor: readCursor(ctx.repo.getCursor('git', root)) }))
-      .sort((a, b) => (a.cursor.checkedAt ?? '').localeCompare(b.cursor.checkedAt ?? ''));
+      // The project being resumed first (its commits are what the brief needs),
+      // then the least recently checked (soft deadline rotation).
+      .sort(
+        (a, b) =>
+          Number(b.root === ctx.projectFilter) - Number(a.root === ctx.projectFilter) ||
+          (a.cursor.checkedAt ?? '').localeCompare(b.cursor.checkedAt ?? ''),
+      );
     let checked = 0;
     for (const { root, cursor } of queue) {
       if (isInsideLeftoffHome(root)) continue; // recursion guard (§1.9)
