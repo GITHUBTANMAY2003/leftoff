@@ -45,12 +45,24 @@ if status is-interactive
         test "$PWD" = "$__leftoff_auto_pwd"; and return 0
         set -g __leftoff_auto_pwd $PWD
         test "$LEFTOFF_INTERNAL" = 1; and return 0
-        set -l project (command git rev-parse --show-toplevel 2>/dev/null)
+        # Task 16: the nearest folder up with a .git, else this folder, as
+        # real paths, and the "quiet until" marker, read with builtins (only
+        # the time needs `date`).
+        set -l project (builtin realpath $PWD 2>/dev/null)
         test -n "$project"; or set project $PWD
+        set -l dir $project
+        while test -n "$dir"; and not test -e "$dir/.git"
+            set dir (string replace -r '/[^/]*$' '' -- $dir)
+        end
+        test -n "$dir"; and set project $dir
         test "$project" = "$__leftoff_auto_project"; and return 0
         set -g __leftoff_auto_project $project
         set -l home $HOME/.leftoff
         test -n "$LEFTOFF_HOME"; and set home $LEFTOFF_HOME
+        set -l marker $home/shell/quiet/(string replace -a '%' '%25' -- $project | string replace -a / %2F)
+        if test -r $marker; and read -l until <$marker; and string match -qr '^[0-9]+$' -- $until
+            test (date +%s) -lt $until; and return 0
+        end
         if test -x $home/bin/leftoff
             $home/bin/leftoff brief --auto 2>/dev/null
         else if command -sq leftoff

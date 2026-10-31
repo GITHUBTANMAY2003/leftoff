@@ -52,14 +52,27 @@ __leftoff_prompt() {
 # project (its git top level, else the folder), run `leftoff brief --auto`. It
 # prints only when a brief is due. Keeps $? for the rest of PROMPT_COMMAND.
 __leftoff_auto() {
-  local exit_code=$? project shim
+  local exit_code=$? project dir shim marker until now
   [ "$PWD" != "${__leftoff_auto_pwd:-}" ] || return $exit_code
   __leftoff_auto_pwd=$PWD
   [ "${LEFTOFF_INTERNAL:-}" != 1 ] || return $exit_code
-  project=$(command git rev-parse --show-toplevel 2>/dev/null)
-  [ -n "$project" ] || project=$PWD
+  # Task 16: the nearest folder up with a .git, else this folder, as real
+  # paths, and the "quiet until" marker, read with builtins only (pwd -P in a
+  # subshell, and date on bash < 5).
+  project=$(builtin pwd -P 2>/dev/null) || project=$PWD
+  dir=$project
+  while [ -n "$dir" ] && [ ! -e "$dir/.git" ]; do dir=${dir%/*}; done
+  [ -n "$dir" ] && project=$dir
   [ "$project" != "${__leftoff_auto_project:-}" ] || return $exit_code
   __leftoff_auto_project=$project
+  marker=${project//\%/%25}
+  marker=${LEFTOFF_HOME:-$HOME/.leftoff}/shell/quiet/${marker//\//%2F}
+  if [ -r "$marker" ] && read -r until <"$marker"; then
+    case $until in '' | *[!0-9]*) until= ;; esac
+    now=${EPOCHSECONDS:-}
+    [ -n "$now" ] || now=$(date +%s)
+    if [ -n "$until" ] && [ "$now" -lt "$until" ]; then return $exit_code; fi
+  fi
   shim=${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff
   if [ -x "$shim" ]; then
     "$shim" brief --auto 2>/dev/null

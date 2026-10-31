@@ -1,11 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { buildFacts } from '../../src/brief/facts.ts';
 import { factsHash } from '../../src/brief/hash.ts';
-import { isBriefDue, runBriefAuto } from '../../src/cli/commands/brief-auto.ts';
+import { isBriefDue, quietMarkerName, runBriefAuto } from '../../src/cli/commands/brief-auto.ts';
 import { DEFAULT_CONFIG, saveConfig, type Config } from '../../src/core/config.ts';
 import { ensureHome } from '../../src/core/paths.ts';
 import { makeEvent } from '../../src/model/event.ts';
@@ -219,4 +227,49 @@ test('a cached polished summary for the same facts is shown first; a stale one i
     repo.markBriefShown(project, '2000-01-01T00:00:00.000Z');
   });
   expect(await runBriefAuto(project, deps())).not.toContain('Old summary.');
+});
+
+// ---- Task 16 Step 2a: a "quiet until" marker the shell can read without node ----
+
+const marker = (root: string) =>
+  join(process.env.LEFTOFF_HOME as string, 'shell', 'quiet', quietMarkerName(root));
+const quietUntil = (root: string) => Number(readFileSync(marker(root), 'utf8').trim());
+
+test('the marker name is the project path with % and / escaped', () => {
+  expect(quietMarkerName('/a/b%c')).toBe('%2Fa%2Fb%25c');
+});
+
+test('not due yet: quiet until the last activity plus the gap', async () => {
+  seed(1); // last activity 1 h ago, gap 4 h
+  expect(await runBriefAuto(project, deps())).toBe('');
+  expect(quietUntil(project)).toBe(Math.floor((NOW.getTime() + 3 * HOUR) / 1000));
+});
+
+test('after a brief is shown: quiet for a gap from now', async () => {
+  seed(5);
+  expect(await runBriefAuto(project, deps())).not.toBe('');
+  expect(quietUntil(project)).toBe(Math.floor((NOW.getTime() + 4 * HOUR) / 1000));
+});
+
+test('a brief that is due but too slow to show leaves no marker, so the next prompt tries again', async () => {
+  seed(5);
+  mkdirSync(join(process.env.LEFTOFF_HOME as string, 'shell', 'quiet'), { recursive: true });
+  writeFileSync(marker(project), '1\n');
+  const slow = deps({
+    readWorking: () => {
+      const until = Date.now() + 400;
+      while (Date.now() < until);
+      return RAHUL_WORKING;
+    },
+  });
+  expect(await runBriefAuto(project, slow)).toBe('');
+  expect(existsSync(marker(project))).toBe(false);
+});
+
+test('an ignored project gets a marker too, so cd into it skips node', async () => {
+  const c = config();
+  c.ignore.projects = [project];
+  saveConfig(c);
+  expect(await runBriefAuto(project, deps())).toBe('');
+  expect(quietUntil(project)).toBe(Math.floor((NOW.getTime() + 4 * HOUR) / 1000));
 });

@@ -37,6 +37,9 @@ __leftoff_precmd() {
 # Automatic brief (Task 14): on the first prompt, and on a prompt in another
 # project (its git top level, else the folder), run `leftoff brief --auto`. It
 # prints only when a brief is due. Kept across re-sourcing, so no repeat.
+# Task 16: the project is found and the "quiet until" marker that
+# `brief --auto` leaves is read without starting any process, so a cd into a
+# project with no brief due costs almost nothing.
 typeset -g __leftoff_auto_pwd=$__leftoff_auto_pwd __leftoff_auto_project=$__leftoff_auto_project
 
 __leftoff_auto() {
@@ -44,12 +47,18 @@ __leftoff_auto() {
   [[ $PWD != "$__leftoff_auto_pwd" ]] || return $exit_code
   __leftoff_auto_pwd=$PWD
   [[ $LEFTOFF_INTERNAL != 1 ]] || return $exit_code
-  local project
-  project=$(command git rev-parse --show-toplevel 2>/dev/null)
-  [[ -n $project ]] || project=$PWD
+  # the nearest folder up with a .git, else this folder, as real paths
+  local project=${PWD:A} dir=${PWD:A}
+  while [[ $dir != / && ! -e $dir/.git ]]; do dir=${dir:h}; done
+  [[ -e $dir/.git ]] && project=$dir
   [[ $project != "$__leftoff_auto_project" ]] || return $exit_code
   __leftoff_auto_project=$project
-  local shim=${LEFTOFF_HOME:-$HOME/.leftoff}/bin/leftoff
+  local home=${LEFTOFF_HOME:-$HOME/.leftoff} until=
+  local marker=$home/shell/quiet/${${project//\%/%25}//\//%2F}
+  if [[ -r $marker ]] && read -r until <$marker && [[ $until == <-> ]] && (( EPOCHSECONDS < until )); then
+    return $exit_code
+  fi
+  local shim=$home/bin/leftoff
   if [[ -x $shim ]]; then
     "$shim" brief --auto 2>/dev/null
   elif (( $+commands[leftoff] )); then

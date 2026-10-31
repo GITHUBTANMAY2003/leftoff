@@ -92,7 +92,8 @@ export function buildLooseEnds(deps: {
     const pastDeadline = deps.deadline !== undefined && Date.now() > deps.deadline;
     const working = pastDeadline ? UNAVAILABLE : deps.readWorking(root);
     const f = buildFacts(root, { repo, config, report: null, working, now });
-    const lastActiveAt = f.lastActiveAt ?? lastTs;
+    // When you last worked on it, not its last look-around (owner decision after 15b).
+    const lastActiveAt = f.lastActiveAt !== null ? f.window.to : lastTs;
     const uncommittedCount = f.unfinished.files.length;
     const gitUnavailable = working.unavailable === true;
     if (!f.claimedDone && f.openProblems.length === 0 && uncommittedCount === 0 && !gitUnavailable)

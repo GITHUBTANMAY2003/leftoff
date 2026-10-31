@@ -112,6 +112,28 @@ describe.each(SHELLS.map((shell) => [shell, cannotRun(shell)] as const))(
       },
     );
 
+    run(
+      'a quiet marker in the future skips node for that project; a past one does not (Task 16 Step 2a)',
+      async () => {
+        fakeLeftoff(join(home, 'bin', 'leftoff'));
+        const quietDir = join(home, 'shell', 'quiet');
+        mkdirSync(quietDir, { recursive: true });
+        const name = (root: string) => root.replace(/%/g, '%25').replace(/\//g, '%2F');
+        const now = Math.floor(Date.now() / 1000);
+        writeFileSync(join(quietDir, name(join(tmp, 'projA'))), `${now + 3600}\n`);
+        writeFileSync(join(quietDir, name(join(tmp, 'projB'))), `${now - 60}\n`);
+        const r = await runInteractive(
+          shell,
+          session(shell, [`cd ${join(tmp, 'projA', 'sub')}`, `cd ${join(tmp, 'projB')}`]),
+          env(),
+        );
+        expect(calls(r.stdout)).toEqual([
+          `AUTO brief --auto ${tmp}`, // no marker yet
+          `AUTO brief --auto ${join(tmp, 'projB')}`, // its quiet time is over
+        ]);
+      },
+    );
+
     run('no leftoff at all: nothing runs, nothing printed', async () => {
       const none = await runInteractive(shell, session(shell, [`cd ${join(tmp, 'projA')}`]), env());
       expect(calls(none.stdout)).toEqual([]);

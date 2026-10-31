@@ -217,3 +217,15 @@ test('a folder that is not a git repo counts only with terminal activity', () =>
       .sort(),
   ).toEqual(['/home/u/repo', '/home/u/scripts']);
 });
+
+test('a project shows the time you last worked on it, not its last look-around (owner answer 2)', () => {
+  repo.insertEvents([
+    failure('/app', 6 * 24, 'make a'),
+    {
+      ...ev('/app', 2 * 24, 'command', 'git log', { command: 'git log', exitCode: 0 }),
+      source: 'shell' as const,
+    },
+  ]);
+  const [entry] = build();
+  expect(entry?.lastActiveAt).toBe(new Date(NOW.getTime() - 6 * 24 * HOUR).toISOString());
+});

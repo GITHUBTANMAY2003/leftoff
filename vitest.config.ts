@@ -20,6 +20,10 @@ export default defineConfig({
         test: {
           name: 'e2e',
           include: ['tests/e2e/**/*.test.ts'],
+          // One file at a time: the performance budgets (Task 16) are
+          // measured without other tests competing for the CPU.
+          fileParallelism: false,
+          testTimeout: 120_000,
         },
       },
     ],

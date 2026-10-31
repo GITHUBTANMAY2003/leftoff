@@ -179,3 +179,26 @@ test('a long claim is shortened inside the quote, so "but …" stays on the line
   expect([...line].length).toBeLessThanOrEqual(100);
   expect(line).toMatch(/…", but the billing_adapters tests are still failing\.$/);
 });
+
+// ---- after 15b (owner answer 5): "You asked" is the first sentence, about 100 chars ----
+
+test('"You asked" shows the first sentence of the request', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    lastIntent: 'Task 3 approved. Now add the cache and a test.',
+  };
+  expect(lines(f)).toContain('You asked: Task 3 approved.');
+});
+
+test('leading @file mentions are skipped; a long first sentence is cut at a word, ~100 chars', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    lastIntent: `@docs/plan.md @docs/PROGRESS.md We are continuing ${'the build again '.repeat(10)}today. Second.`,
+  };
+  const line = lines(f).find((l) => l.startsWith('You asked: ')) as string;
+  const asked = line.slice('You asked: '.length);
+  expect(asked.startsWith('We are continuing the build')).toBe(true);
+  expect([...asked].length).toBeLessThanOrEqual(100);
+  expect(asked.endsWith('…')).toBe(true);
+  expect(asked).not.toMatch(/ \S{1,3}…$/); // not a half word
+});

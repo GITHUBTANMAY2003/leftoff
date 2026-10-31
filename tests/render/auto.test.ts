@@ -71,3 +71,17 @@ test('a long command is shortened from the middle so the error shows', () => {
   expect([...line].length).toBeLessThanOrEqual(100);
   expect(line).toMatch(/`cargo run … .*star_import` — thread main panicked/);
 });
+
+// ---- after 15b (owner answer 3): the auto brief shows at most 2 sentences of polish ----
+
+test('the auto brief shows at most two sentences (~200 chars) of the polished summary', () => {
+  const polished =
+    'Rahul was adding password reset. SMTP refuses connections on both ports. He tried port 587 and no TLS.';
+  expect(render(rahulFacts(), polished).split('\n')[1]).toBe(
+    '  Rahul was adding password reset. SMTP refuses connections on both ports.',
+  );
+  const long = `${'A very long first sentence with many words in it '.repeat(6)}ends here. Second one.`;
+  const shown = render(rahulFacts(), long).split('\n')[1] as string;
+  expect([...shown.trim()].length).toBeLessThanOrEqual(200);
+  expect(shown.endsWith('…')).toBe(true);
+});

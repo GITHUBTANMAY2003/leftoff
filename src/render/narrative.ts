@@ -16,6 +16,30 @@ const NEXT_NOTE = /^next:\s*/i;
 const UNCOMMITTED = /^(\d+) uncommitted files?$/;
 
 const words = (p: OpenProblem) => describeFailure(p.command, p.error);
+
+// Sentences of one-line text: split after . ! ? before the next word.
+const sentences = (text: string) =>
+  text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?<=[.!?])\s+(?=\S)/);
+
+// "You asked": the first sentence of the request, about 100 characters at
+// most, after any leading @file mentions (owner decision after Task 15b).
+const MAX_ASKED_CHARS = 100;
+function askedLine(request: string): string {
+  const text = request.replace(/^(@\S+\s+)+/, '');
+  return clip(sentences(text)[0] ?? text, MAX_ASKED_CHARS);
+}
+
+// The auto brief's polished summary: at most two sentences, about 200
+// characters (owner decision after Task 15b); `resume` shows it whole.
+const MAX_SHORT_POLISH_CHARS = 200;
+export function shortPolish(text: string): string {
+  const [first = '', second] = sentences(text);
+  const both = second === undefined ? first : `${first} ${second}`;
+  return clip([...both].length <= MAX_SHORT_POLISH_CHARS ? both : first, MAX_SHORT_POLISH_CHARS);
+}
 const isCommit = (item: string) => !/^Edited \d+ files?: /.test(item);
 
 // The problem the claim sentence names, when its first contradiction is one.
@@ -116,7 +140,7 @@ export function narrativeLines(
   ].join(' · ');
   const out = [opts.width === null ? first : fit('', first, opts.width)];
   if (polished) out.push(...polished.split('\n').map((l) => `${indent}${l}`)); // prose, not cut
-  if (f.lastIntent) out.push(line(`You asked: ${f.lastIntent}`));
+  if (f.lastIntent) out.push(line(`You asked: ${askedLine(f.lastIntent)}`));
   if (f.lastAgent) {
     out.push(line(`${agentName(f.lastAgent.source)}'s last update: ${f.lastAgent.update}`));
   }
