@@ -29,7 +29,7 @@ test('agent context starts and ends with exact lines and is ≤ 4000 chars even 
   expect(out).toMatch(/^- \+\d+ more$/m);
   expect(out).toContain('src/module-0/file-0.ts'); // shortened, not dropped
   expect(out).toContain(
-    'Pick up with: Get `python scripts/send_test_email.py` working (SMTP connection refused)',
+    'Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
   );
 });
 
@@ -40,7 +40,7 @@ test('the agent is told what was already tried, so it does not retry it (§1.1)'
   expect(out).toContain('feature/forgot-password');
   expect(out).toContain('email_service.py');
   expect(out).toContain(
-    'Pick up with: Get `python scripts/send_test_email.py` working (SMTP connection refused)',
+    'Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
   );
 });
 
@@ -123,6 +123,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
   const { renderTerminal } = await import('../../src/render/terminal.ts');
   const { renderAutoBrief } = await import('../../src/render/auto.ts');
   const { renderLooseEnds } = await import('../../src/render/loose-ends.ts');
+  const { plainNextStep } = await import('../../src/brief/next-step.ts');
   const { openDb } = await import('../../src/store/db.ts');
   const { createRepo } = await import('../../src/store/repo.ts');
   const { mkdtempSync, rmSync } = await import('node:fs');
@@ -169,6 +170,9 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
             openProblems: f.openProblems,
             uncommittedCount: 0,
             gitUnavailable: false,
+            workingOn: null,
+            lastIntent: null,
+            nextStep: plainNextStep(f),
           },
         ],
         RAHUL_NOW,
@@ -177,8 +181,8 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
       renderAgentContext(f, null, { now: RAHUL_NOW }),
     ];
     for (const out of outputs) {
-      // the auto brief says it in words and names the command in its next step
-      expect(out).toContain(out === outputs[1] ? cleaned : want);
+      // the auto brief and loose ends say it in words and name the command in the next step
+      expect(out).toContain(out === outputs[1] || out === outputs[2] ? cleaned : want);
       expect(out).not.toContain('source "$HOME');
       expect(out).not.toContain('grep -E');
     }
@@ -188,11 +192,26 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
   }
 });
 
-test('the agent context opens with the narrative brief (Task 15b)', () => {
+test('the agent context opens with the brief sized by the work (medium here)', () => {
   const lines = renderAgentContext(rahulFacts(), null, { now: RAHUL_NOW }).split('\n');
   expect(lines.slice(2, 5)).toEqual([
-    'myapp · 14h ago · branch feature/forgot-password',
-    'You asked: Add a forgot-password flow: endpoint, reset token, email',
-    "Claude's last update: The SMTP server still refuses the connection on both ports.",
+    'myapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password',
+    'You were building forgot password.',
+    'Done: 2 commits: Added reset-token migration; Built POST /auth/forgot-password endpoint',
   ]);
+});
+
+test('after large work the agent context has the sections, bullets as "- "', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    work: {
+      ...rahulFacts().work,
+      size: 'large',
+      filesChanged: 3,
+      topFolders: [{ path: 'src', files: 3 }],
+    },
+  };
+  const out = renderAgentContext(f, null, { now: RAHUL_NOW });
+  expect(out).toContain('What got done\n- 2 commits: Added reset-token migration;');
+  expect(out).toContain("Where it stopped\n- Claude's last update:");
 });

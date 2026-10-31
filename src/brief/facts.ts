@@ -18,6 +18,7 @@ import {
 import type { Repo } from '../store/repo.ts';
 import { failureCategory, isWholeProjectRun, resolvedCategories } from './failure-words.ts';
 import { chooseNextStep } from './next-step.ts';
+import { summarizeWork, type WorkSummary } from './work.ts';
 import { splitSessions } from './sessions.ts';
 
 // Deterministic brief facts (spec §1.7). No AI: everything here comes from
@@ -33,6 +34,7 @@ export interface BriefFacts {
   lastIntent: string | null;
   lastAgentMessage: string | null;
   lastAgent: LastAgent | null; // Task 15b: the agent's final message in plain words
+  work: WorkSummary; // how much was done over the last stretch of work, and on what
   openProblems: OpenProblem[];
   claimedDone: ClaimedDone | null;
   notes: string[];
@@ -67,6 +69,9 @@ export interface LooseEnds {
   openProblems: OpenProblem[];
   uncommittedCount: number;
   gitUnavailable: boolean; // git status failed or timed out: "? git status unavailable"
+  workingOn: string | null; // the work summary's topic (compact loose ends)
+  lastIntent: string | null; // its fallback
+  nextStep: string | null; // in plain words
 }
 
 const DAY_MS = 86_400_000;
@@ -192,11 +197,24 @@ const commandOf = (e: WorkEvent): string | null =>
 // The error to show: the first line of data.error when there is one. A
 // command that failed without any output shows its exit code instead (the
 // command itself is shown next to it, see problemText).
+// The line of an output that says what went wrong: the first one that reads
+// like an error, with decoration (=== ___ ***) trimmed; one-word headers such
+// as "ERRORS" skipped. Without one, the first line (owner proof run, Task 17).
+const ERRORISH =
+  /\b(errors?|fail(ed|ure|s)?|panic(ked)?|exception|traceback|refused|denied|not found|no such file|cannot|can't|could not|unable|fatal|killed)\b/i;
+function errorLine(output: string): string {
+  const lines = output
+    .split('\n')
+    .map((l) => l.replace(/^[\s=_*#-]+|[\s=_*#-]+$/g, ''))
+    .filter((l) => l !== '');
+  return lines.find((l) => ERRORISH.test(l) && /\s/.test(l)) ?? firstLine(output);
+}
+
 function errorOf(failures: WorkEvent[]): string {
   const withError = [...failures]
     .reverse()
     .find((f) => typeof f.data.error === 'string' && f.data.error.trim());
-  if (withError) return firstLine(withError.data.error as string);
+  if (withError) return errorLine(withError.data.error as string);
   const newest = failures.at(-1) as WorkEvent;
   if (commandOf(newest) === null) return newest.summary;
   return typeof newest.data.exitCode === 'number' ? `exit code ${newest.data.exitCode}` : 'failed';
@@ -463,6 +481,28 @@ const clipText = (text: string, max: number) => {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 1))}…`;
 };
 
+// The "where you left off" stretch: the last work session and the ones before
+// it, while each break is under 48 h, over at most 14 days. Look-around
+// sessions don't count.
+const STRETCH_GAP_MS = 48 * 3_600_000;
+const STRETCH_MAX_MS = 14 * DAY_MS;
+function stretchOf(working: WorkEvent[][]): WorkEvent[] {
+  const last = working.at(-1);
+  if (last === undefined) return [];
+  const end = Date.parse((last.at(-1) as WorkEvent).ts);
+  let first = working.length - 1;
+  while (first > 0) {
+    const prev = working[first - 1] as WorkEvent[];
+    const gap =
+      Date.parse((working[first] as WorkEvent[])[0]?.ts as string) -
+      Date.parse((prev.at(-1) as WorkEvent).ts);
+    if (gap >= STRETCH_GAP_MS || end - Date.parse((prev[0] as WorkEvent).ts) > STRETCH_MAX_MS)
+      break;
+    first--;
+  }
+  return working.slice(first).flat();
+}
+
 export function buildFacts(
   root: string,
   deps: {
@@ -507,6 +547,11 @@ export function buildFacts(
     lastIntent: lastRequest(window),
     lastAgentMessage: newest('agent_message'),
     lastAgent: lastAgentOf(window),
+    work: summarizeWork(stretchOf(working), {
+      root,
+      branch: deps.working?.branch ?? null,
+      gapMinutes: deps.config.sessionGapMinutes,
+    }),
     openProblems,
     claimedDone: detectClaimedDone(scope, openProblems, unfinished.files.length),
     notes: events.filter((e) => e.kind === 'note').map((e) => e.summary), // P11: always shown

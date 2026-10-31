@@ -153,10 +153,13 @@ async function readCommits(
     if ((err as GitError).kind === 'failed') return { events: [], head: null }; // no commits yet
     throw err;
   }
-  const format = `--format=%H${FIELD}%aI${FIELD}%s${RECORD}`;
+  // Each record starts with RECORD; --name-only lists the commit's files after
+  // its fields (work size: which folders changed).
+  const format = `--format=${RECORD}%H${FIELD}%aI${FIELD}%s${FIELD}`;
   // A fixed string, not a pattern: "+" and "." in an email are literal.
   const filters = [
     '--no-merges',
+    '--name-only',
     ...(email ? ['-i', '--fixed-strings', `--author=<${email}>`] : []),
   ];
   const firstRun = [
@@ -180,7 +183,7 @@ async function readCommits(
   }
   const events = records(out)
     .reverse() // git log is newest first
-    .map(([hash = '', date = '', subject = '']) =>
+    .map(([hash = '', date = '', subject = '', names = '']) =>
       makeEvent({
         source: 'git',
         kind: 'commit',
@@ -188,12 +191,21 @@ async function readCommits(
         ts: iso(date),
         sessionRef: null,
         summary: subject,
-        data: { hash },
+        data: { hash, files: commitFiles(names) },
         dedupeKey: dedupeKey('git', root, hash),
       }),
     );
   return { events, head };
 }
+
+const MAX_COMMIT_FILES = 200;
+const commitFiles = (names: string) =>
+  names
+    .split('\n')
+    .map((n) => n.trim())
+    .filter(Boolean)
+    .sort()
+    .slice(0, MAX_COMMIT_FILES);
 
 const SWITCH = /^checkout: moving from (.+) to (.+)$/;
 

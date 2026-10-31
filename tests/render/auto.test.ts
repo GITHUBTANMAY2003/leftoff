@@ -5,8 +5,8 @@ import type { BriefFacts, OpenProblem } from '../../src/brief/facts.ts';
 import { renderAutoBrief } from '../../src/render/auto.ts';
 import { RAHUL_NOW, rahulFacts } from './helpers.ts';
 
-// The automatic brief on terminal open: the narrative (Task 15b), then the
-// pointer to `leftoff resume`.
+// The automatic brief on terminal open: the compact form (what you were
+// working on, where it stopped, next), then the pointer to `leftoff resume`.
 
 const golden = (name: string) => readFileSync(join(import.meta.dirname, 'golden', name), 'utf8');
 const render = (f: BriefFacts, polished: string | null = null) =>
@@ -35,10 +35,13 @@ test('auto brief: exact first and last lines, every line ≤ 100 chars, extra pr
     openProblems: [problem(1), problem(2), problem(3)],
   };
   const lines = render(f).split('\n');
-  expect(lines[0]).toBe('myapp · 14h ago · branch feature/forgot-password');
-  expect(lines.at(-1)).toBe('Run `leftoff resume` for details');
-  expect(lines).toContain('  Still open: 2 more problems · 3 uncommitted files');
-  expect(lines.find((l) => l.startsWith('  It stopped with: `make step1`'))).toBeDefined();
+  expect(lines[0]).toBe(
+    'myapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password',
+  );
+  expect(lines.at(-1)).toBe('Run `leftoff resume` for the full story');
+  expect(lines.find((l) => l.startsWith('  Stopped: `make step1`'))).toMatch(
+    / · 2 more problems · 3 uncommitted files$/,
+  );
   for (const l of lines) expect([...l].length).toBeLessThanOrEqual(100);
 });
 
@@ -47,12 +50,14 @@ test('a cached polished summary is shown first, right after the first line', () 
     '\n',
   );
   expect(lines[1]).toBe('  Rahul was adding password reset; SMTP still refuses.');
-  expect(lines[2]).toMatch(/^ {2}You asked:/);
+  expect(lines[2]).toMatch(/^ {2}You were/);
 });
 
 test('color only bolds the first line', () => {
   const out = renderAutoBrief(rahulFacts(), { color: true, now: RAHUL_NOW });
-  expect(out.split('\n')[0]).toBe('\x1b[1mmyapp · 14h ago · branch feature/forgot-password\x1b[0m');
+  expect(out.split('\n')[0]).toBe(
+    '\x1b[1mmyapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password\x1b[0m',
+  );
   expect(out.split('\n').slice(1).join('\n')).not.toContain('\x1b[');
 });
 
@@ -67,7 +72,7 @@ test('a long command is shortened from the middle so the error shows', () => {
   };
   const line = render(f)
     .split('\n')
-    .find((l) => l.startsWith('  It stopped with:')) as string;
+    .find((l) => l.startsWith('  Stopped:')) as string;
   expect([...line].length).toBeLessThanOrEqual(100);
   expect(line).toMatch(/`cargo run … .*star_import` — thread main panicked/);
 });
@@ -84,4 +89,11 @@ test('the auto brief shows at most two sentences (~200 chars) of the polished su
   const shown = render(rahulFacts(), long).split('\n')[1] as string;
   expect([...shown.trim()].length).toBeLessThanOrEqual(200);
   expect(shown.endsWith('…')).toBe(true);
+});
+
+test('the auto brief stays compact even after large work', () => {
+  const f: BriefFacts = { ...rahulFacts(), work: { ...rahulFacts().work, size: 'large' } };
+  const lines = render(f).split('\n');
+  expect(lines.length).toBeLessThanOrEqual(6);
+  expect(lines).not.toContain('  What got done');
 });

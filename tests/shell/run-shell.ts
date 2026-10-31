@@ -1,5 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -72,7 +80,7 @@ export function runInteractive(
   args: string[] = ARGS[shell],
 ): Promise<ShellRun> {
   const input = lines.join('\n') + '\n';
-  const fullEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin', TERM: 'dumb', ...env };
+  const fullEnv = { PATH: pathWithoutLeftoff(), TERM: 'dumb', ...env };
   const pty = shell === 'fish' ? findPtyForm() : null;
   if (pty) return runUnderPty(pty([shellBinary(shell), ...args]), fullEnv, input);
   return collect(spawn(shellBinary(shell), args, { env: fullEnv }), (child) => {
@@ -131,4 +139,25 @@ function collect(
     });
     start(child);
   });
+}
+
+// PATH without an installed `leftoff` (`npm link`, a global install), which
+// would answer the hooks' fallback in tests. A folder holding one is replaced
+// by a stand-in with links to everything else in it (fish, git, … stay).
+let cleanPath: string | undefined;
+export function pathWithoutLeftoff(): string {
+  if (cleanPath !== undefined) return cleanPath;
+  cleanPath = (process.env.PATH ?? '/usr/bin:/bin')
+    .split(':')
+    .filter((dir) => dir !== '')
+    .map((dir) => {
+      if (!existsSync(join(dir, 'leftoff'))) return dir;
+      const standIn = mkdtempSync(join(tmpdir(), 'leftoff-path-'));
+      for (const name of readdirSync(dir)) {
+        if (name !== 'leftoff') symlinkSync(join(dir, name), join(standIn, name));
+      }
+      return standIn;
+    })
+    .join(':');
+  return cleanPath;
 }

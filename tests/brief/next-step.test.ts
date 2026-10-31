@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { BriefFacts, ClaimedDone, OpenProblem } from '../../src/brief/facts.ts';
 import { chooseNextStep } from '../../src/brief/next-step.ts';
+import { summarizeWork } from '../../src/brief/work.ts';
 
 function facts(partial: Partial<Omit<BriefFacts, 'nextStep'>>): Omit<BriefFacts, 'nextStep'> {
   return {
@@ -13,6 +14,7 @@ function facts(partial: Partial<Omit<BriefFacts, 'nextStep'>>): Omit<BriefFacts,
     lastIntent: null,
     lastAgentMessage: null,
     lastAgent: null,
+    work: summarizeWork([], { root: '/p', branch: null, gapMinutes: 45 }),
     openProblems: [],
     claimedDone: null,
     notes: [],

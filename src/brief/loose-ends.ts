@@ -5,6 +5,7 @@ import type { readWorkingState, WorkingState } from '../collectors/git.ts';
 import type { Config } from '../core/config.ts';
 import type { Repo } from '../store/repo.ts';
 import { buildFacts, type LooseEnds } from './facts.ts';
+import { plainNextStep } from './next-step.ts';
 
 // Loose ends across projects (spec §1.7): every recently active project that
 // has a claimed-done contradiction, an open problem or uncommitted files.
@@ -109,6 +110,9 @@ export function buildLooseEnds(deps: {
       openProblems: f.openProblems,
       uncommittedCount,
       gitUnavailable,
+      workingOn: f.work.workingOn,
+      lastIntent: f.lastIntent,
+      nextStep: plainNextStep(f),
     });
   }
   return items.sort(compare);

@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { commandFiles, displayCommand, programWords } from '../model/event.ts';
+import { chainSteps, commandFiles, displayCommand, programWords } from '../model/event.ts';
 
 // Failures in plain words (Task 15b): "the billing tests are failing" instead
 // of a raw command line. Deterministic, one data table: a tool pattern gives a
@@ -179,7 +179,20 @@ function testSubject(command: string, label: string | null): string {
   return label ? `the ${label} tests` : 'the tests';
 }
 
+// Exit codes that say what happened to the process.
+const EXIT_CODES: Record<string, { now: string; fix: string }> = {
+  '137': { now: 'was killed (exit code 137, often out of memory)', fix: 'Find out why' },
+  '139': { now: 'crashed (exit code 139, a segmentation fault)', fix: 'Find out why' },
+  '126': { now: 'could not run (exit code 126, not executable)', fix: 'Check' },
+};
+
 export function describeFailure(command: string | null, error: string): FailureWords {
+  // A chain of checks (`cargo fmt …; cargo test …`) reads as its last check.
+  if (command !== null) {
+    const steps = chainSteps(displayCommand(command));
+    const check = [...steps].reverse().find((step) => classify(step) !== null);
+    if (steps.length > 1 && check !== undefined) return describeFailure(check, error);
+  }
   const script = MISSING_SCRIPT.exec(error)?.[1];
   if (script !== undefined) {
     return {
@@ -280,12 +293,25 @@ export function describeFailure(command: string | null, error: string): FailureW
         still: 'the Docker build still fails',
         fix: `Fix the Docker build ${run}`,
       };
-    default:
+    default: {
+      const exit = EXIT_CODES[/^exit code (\d+)$/.exec(error)?.[1] ?? ''];
+      if (exit) {
+        return {
+          category: null,
+          now: `\`${shown}\` ${exit.now}`,
+          still: `\`${shown}\` still ${exit.now
+            .replace(/^was /, 'gets ')
+            .replace(/^crashed/, 'crashes')
+            .replace(/^could not/, 'cannot')}`,
+          fix: `${exit.fix} \`${shown}\` ${exit.now.split(' (')[0]}`,
+        };
+      }
       return {
         category: null,
         now: `\`${shown}\` — ${error}`,
         still: `\`${shown}\` still fails — ${error}`,
         fix: `Get \`${shown}\` working (${error})`,
       };
+    }
   }
 }

@@ -73,9 +73,12 @@ test('resume prints the narrative brief for the project of cwd (Task 15b)', asyn
   seed();
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
   expect(r.exitCode).toBe(0);
-  expect(r.output).toMatch(/^myapp · \S+ ago\n {2}You asked: Add a forgot-password flow/);
+  // not a git repo here: no branch, so "You were" comes from the first commit
+  expect(r.output).toMatch(
+    /^myapp · last worked \S+ ago · about 1\.5 hours\n {2}You were working on: Built POST \/auth\/forgot-password endpoint\./,
+  );
   expect(r.output).toContain(
-    '  It stopped with: `python scripts/send_test_email.py` — SMTP connection refused',
+    '  Stopped: `python scripts/send_test_email.py` — SMTP connection refused',
   );
   expect(r.output.split('\n').at(-1)).toBe(
     'Exact commands, errors and attempts: `leftoff resume --details`',
@@ -118,7 +121,7 @@ test('resume ingests first: a failing command in the shell log shows up in the s
     [Date.now(), 2, 15, 42, project, 'make deploy'].join('\t') + '\n',
   );
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
-  expect(r.output).toContain('  It stopped with: `make deploy` fails');
+  expect(r.output).toContain('  Next: Get `make deploy` working (exit code 2).'); // small work
   // git ran fine (installed; this folder just isn't a repo); no agent logs exist here.
   const details = await runResume({ cwd: project, format: 'details', polish: false });
   expect(details.output).toContain('Sources: claude –  git ✓  shell ✓  codex –');
@@ -171,7 +174,7 @@ test('--polish runs the polish provider now and shows its paragraph above the fa
   const out = (await runResume({ cwd: project, format: 'terminal', polish: true })).output;
   const lines = out.split('\n');
   expect(lines[1]).toBe('  Polished now: SMTP still blocks resets.'); // first, after line 1
-  expect(out).toContain('Pick up with:');
+  expect(out).toContain('Next:');
   // Saved: a later resume without --polish reuses it while the facts match.
   expect((await runResume({ cwd: project, format: 'terminal', polish: false })).output).toContain(
     'Polished now',
@@ -184,7 +187,7 @@ test('--polish while polish is off prints one hint line to stderr and still show
   expect(r.stderr).toBe(
     'Polish is off. Turn it on with `leftoff setup` or `leftoff config set polish.provider <claude-cli|ollama|…>`.',
   );
-  expect(r.output).toContain('Pick up with:');
+  expect(r.output).toContain('Next:');
   expect(
     (await runResume({ cwd: project, format: 'terminal', polish: false })).stderr,
   ).toBeUndefined();
@@ -244,7 +247,7 @@ test('note appears in next resume output', async () => {
   await runNote(project, 'next: ask ops whether port 587 is open');
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
   expect(r.output).toContain('  Note: SMTP creds are in 1Password');
-  expect(r.output).toContain('  Pick up with: ask ops whether port 587 is open');
+  expect(r.output).toContain('  Next: ask ops whether port 587 is open.');
   const details = await runResume({ cwd: project, format: 'details', polish: false });
   expect(details.output).toContain('Notes\n  • SMTP creds are in 1Password');
 });

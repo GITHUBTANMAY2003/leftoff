@@ -1,4 +1,5 @@
 import { editedPaths, problemText, shortList, type BriefFacts } from '../brief/facts.ts';
+import { folderName, summarizeWork } from '../brief/work.ts';
 import type { Source, WorkEvent } from '../model/event.ts';
 
 // `leftoff standup` (spec §1.8): Yesterday, Today, Blockers. Plain text meant
@@ -19,9 +20,24 @@ const unique = <T>(items: T[]) => [...new Set(items)];
 // Yesterday for one project: its commit subjects; without commits, what was
 // edited and by which agent (plan review B4); without edits, the last request
 // to an agent; otherwise where the work happened (owner decision, Task 11).
+// With commits, the same "what got done" data as the brief (owner request
+// after Task 17 started): short subjects, at most 4, then where most changes were.
+const SHOWN_COMMITS = 4;
 function workedOn(f: BriefFacts, events: WorkEvent[]): string[] {
-  const commits = events.filter((e) => e.kind === 'commit').map((e) => e.summary);
-  if (commits.length > 0) return commits;
+  const work = summarizeWork(events, { root: f.project.root, branch: f.branch, gapMinutes: 45 });
+  if (work.commits.length > 0) {
+    const rest = work.commits.length - SHOWN_COMMITS;
+    const folders = work.topFolders.map((t) => folderName(t.path));
+    return [
+      ...work.commits.slice(0, SHOWN_COMMITS),
+      ...(rest > 0 ? [`+${rest} more ${rest === 1 ? 'commit' : 'commits'}`] : []),
+      ...(work.filesChanged > 0
+        ? [
+            `Most changes in ${joinAnd(folders)} (${work.filesChanged} ${work.filesChanged === 1 ? 'file' : 'files'})`,
+          ]
+        : []),
+    ];
+  }
   const edits = events.filter((e) => e.kind === 'file_edit');
   if (edits.length > 0) {
     const agents = unique(edits.map((e) => toolName(e.source)));

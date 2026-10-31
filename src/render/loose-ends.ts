@@ -1,16 +1,22 @@
 import {
   contradictionOf,
-  problemText,
   type ClaimedDone,
   type LooseEnds,
   type OpenProblem,
 } from '../brief/facts.ts';
+import { agentName } from '../brief/next-step.ts';
 import { relativeAgo } from '../core/time.ts';
-import { fit, fitProblemLine, painter } from './terminal.ts';
-import { plural } from './text.ts';
+import { youWereLine } from './narrative.ts';
+import { fit, fitKeepingTail, LINE_WIDTH, painter } from './terminal.ts';
+import { clipMiddle, plural } from './text.ts';
 
-// `leftoff` / `leftoff loops` (spec §1.8). Lines are cut to the terminal width
-// from the middle, so the counts at the end of a line always survive.
+// `leftoff` / `leftoff loops` (spec §1.8): at most three lines per project —
+// when you last worked on it (with a done-claim and flags), what you were
+// working on, and the next step with what else is open (owner request after
+// Task 17 started). Lines are cut to the terminal width, keeping their ends.
+
+const INDENT = '  ';
+const MAX_WHERE_CHARS = 32;
 
 // "1 test still failing", "2 problems still failing", "1 test and 1 other
 // problem still failing", then " · 3 uncommitted files" (owner decision, Task 11).
@@ -30,8 +36,21 @@ function claimSummary(c: ClaimedDone, problems: OpenProblem[]): string {
   return [...parts, ...rest].join(' · ');
 }
 
-// At most this many problems per project, newest first (Task 15b).
-const MAX_PROBLEMS = 3;
+// What is open besides what the claim and the next step already say.
+function alsoOpen(item: LooseEnds): string[] {
+  const claimed = new Set(item.claimedDone?.contradictions ?? []);
+  const unclaimed = item.openProblems.filter((p) => !claimed.has(contradictionOf(p)));
+  // The next step is about the first problem when there is no claim.
+  const more = unclaimed.length - (item.claimedDone ? 0 : Math.min(unclaimed.length, 1));
+  const filesSaid =
+    /uncommitted/.test([...claimed].join(' ')) || /^Review and commit/.test(item.nextStep ?? '');
+  return [
+    ...(more > 0 ? [`${more} more ${more === 1 ? 'problem' : 'problems'}`] : []),
+    ...(item.uncommittedCount > 0 && !filesSaid
+      ? [plural(item.uncommittedCount, 'uncommitted file')]
+      : []),
+  ];
+}
 
 export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: boolean }): string {
   if (items.length === 0) return 'No loose ends. Everything is committed and passing.';
@@ -39,26 +58,39 @@ export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: bo
 
   const blocks = items.map((item) => {
     const where = item.branch ? `${item.project.name} (${item.branch})` : item.project.name;
-    const title = [
-      where,
-      relativeAgo(item.lastActiveAt, now),
+    const flags = [
+      ...(item.claimedDone
+        ? [
+            `${agentName(item.claimedDone.source)} said done, ${claimSummary(item.claimedDone, item.openProblems)}`,
+          ]
+        : []),
       ...(item.stale ? ['stale'] : []),
-    ].join(' · ');
-    const out = [p.bold(fit('', title))];
-    if (item.claimedDone) {
-      const tail = `" — ${claimSummary(item.claimedDone, item.openProblems)}`;
-      const said = fit(`  ! Agent said "${tail}`, item.claimedDone.message);
-      out.push(`  ${p.yellow('!')} Agent said "${said}${tail}`);
+      ...(item.gitUnavailable ? ['git status unavailable'] : []),
+    ];
+    const tail = [`last worked ${relativeAgo(item.lastActiveAt, now)}`, ...flags]
+      .map((x) => ` · ${x}`)
+      .join('');
+    // The name and branch stay (shortened only past 32 characters); the flags
+    // are cut at the end when the line is too long.
+    const out = [p.bold(fit('', `${clipMiddle(where, MAX_WHERE_CHARS)}${tail}`))];
+    const youWere = youWereLine(item.workingOn, item.lastIntent);
+    if (youWere) out.push(`${INDENT}${fit(INDENT, youWere)}`);
+    if (item.nextStep) {
+      const also = alsoOpen(item);
+      let next = `Next: ${item.nextStep}`;
+      const room =
+        LINE_WIDTH -
+        [...INDENT].length -
+        (also.length > 0 ? [...` (also: ${also.join(', ')})`].length : 1);
+      // Too long: the trailing bracket (the command, or the error) goes first,
+      // so no cut lands inside it.
+      if ([...next].length > room) next = next.replace(/ \([^()]*\)$/, '');
+      out.push(
+        also.length > 0
+          ? `${INDENT}${fitKeepingTail(INDENT, next, ` (also: ${also.join(', ')})`)}`
+          : `${INDENT}${fit(INDENT, /[.!?…]$/.test(next) ? next : `${next}.`)}`,
+      );
     }
-    for (const o of item.openProblems.slice(0, MAX_PROBLEMS)) {
-      const tail = o.attempts.length > 0 ? ` (${plural(o.attempts.length, 'attempt')})` : '';
-      out.push(`  ${p.red('✗')} ${fitProblemLine('  ✗ ', problemText(o), tail)}${p.dim(tail)}`);
-    }
-    const more = item.openProblems.length - MAX_PROBLEMS;
-    if (more > 0) out.push(`  • +${more} more ${more === 1 ? 'problem' : 'problems'}`);
-    if (item.uncommittedCount > 0)
-      out.push(`  • ${plural(item.uncommittedCount, 'uncommitted file')}`);
-    if (item.gitUnavailable) out.push(`  ${p.yellow('?')} git status unavailable`);
     return out.join('\n');
   });
   const n = items.length;

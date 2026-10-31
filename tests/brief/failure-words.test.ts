@@ -216,3 +216,22 @@ describe('categories for resolution', () => {
     expect(resolvedCategories('test')).toEqual(['test']);
   });
 });
+
+// ---- real-data fixes (owner proof run) ----
+
+test('a chain of checks is described by its last test/lint/build step', () => {
+  const words = describeFailure(
+    'cargo fmt --all -- --check | tail -3; cargo test --workspace | grep -E "FAILED|panicked"',
+    'failed',
+  );
+  expect(words.category).toBe('test');
+  expect(words.now).toBe('the Rust tests are failing');
+});
+
+test.each([
+  [137, '`ollama serve` was killed (exit code 137, often out of memory)'],
+  [139, '`ollama serve` crashed (exit code 139, a segmentation fault)'],
+  [126, '`ollama serve` could not run (exit code 126, not executable)'],
+])('exit code %i is put in words', (code, now) => {
+  expect(describeFailure('ollama serve', `exit code ${code}`).now).toBe(now);
+});

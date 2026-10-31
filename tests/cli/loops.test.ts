@@ -57,9 +57,9 @@ test('loops lists a project with an open problem and uncommitted work', async ()
     [
       'Loose ends across 1 project',
       '',
-      'myapp (feature/forgot-password) · 1h ago',
-      '  ✗ `python scripts/send_test_email.py` — SMTP connection refused (2 attempts)',
-      '  • 1 uncommitted file',
+      'myapp (feature/forgot-password) · last worked 1h ago',
+      '  You were building forgot password.',
+      '  Next: Get `python scripts/send_test_email.py` working (also: 1 uncommitted file)',
       '',
       'Run `leftoff resume` inside a project for details',
     ].join('\n'),

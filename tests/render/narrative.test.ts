@@ -2,14 +2,18 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import type { BriefFacts, OpenProblem } from '../../src/brief/facts.ts';
+import type { WorkSummary } from '../../src/brief/work.ts';
 import { narrativeLines, renderBrief } from '../../src/render/narrative.ts';
 import { RAHUL_NOW, rahulFacts } from './helpers.ts';
 
-// The narrative brief (Task 15b C): deterministic plain words, no AI.
+// The brief scales with how much work was done (owner request after Task 17
+// started): small 2–3 lines, medium ~5–6, large ~8–12 in sections. Fixed
+// templates over the facts, no AI.
 
 const golden = (name: string) => readFileSync(join(import.meta.dirname, 'golden', name), 'utf8');
 const lines = (f: BriefFacts, polished: string | null = null) =>
   narrativeLines(f, polished, { now: RAHUL_NOW, width: null });
+const terminal = (f: BriefFacts) => renderBrief(f, null, { color: false, now: RAHUL_NOW }) + '\n';
 
 const problem = (command: string, error: string, isTest = false): OpenProblem => ({
   error,
@@ -26,39 +30,111 @@ const clean = (f: BriefFacts): BriefFacts => ({
   claimedDone: null,
   nextStep: null,
 });
-
-test('the resume brief for the §1.1 scenario (golden)', () => {
-  expect(renderBrief(rahulFacts(), null, { color: false, now: RAHUL_NOW }) + '\n').toBe(
-    golden('rahul-brief.txt'),
-  );
+const work = (f: BriefFacts, w: Partial<WorkSummary>): BriefFacts => ({
+  ...f,
+  work: { ...f.work, ...w },
 });
 
-test('"Agent said done, but…" is one sentence in plain words, and its problem is not repeated', () => {
+// ---- the three sizes ----
+
+test('medium work (the §1.1 scenario): about six lines (golden)', () => {
+  expect(rahulFacts().work.size).toBe('medium');
+  expect(terminal(rahulFacts())).toBe(golden('rahul-brief.txt'));
+});
+
+test('large work: sections for what got done and where it stopped (golden)', () => {
+  const base = rahulFacts();
+  const f: BriefFacts = {
+    ...work(base, {
+      size: 'large',
+      activeMinutes: 750,
+      days: 2,
+      commits: [
+        'bound the memory of loop guards',
+        'first parser cut',
+        'represent and/or expressions',
+        'subscripted callees',
+        'parser design notes',
+      ].reduce<string[]>((all, c, i) => (i === 1 ? [...all, c, 'lexer tokens'] : [...all, c]), []),
+      filesChanged: 37,
+      topFolders: [
+        { path: 'crates/parser', files: 24 },
+        { path: 'crates/lexer', files: 9 },
+        { path: 'docs', files: 4 },
+      ],
+      workingOn: 'working on parser and lexer',
+    }),
+    project: { root: '/w/parser', name: 'parser' },
+    branch: 'feat/m2',
+    unfinished: {
+      files: [
+        { path: 'a.rs', status: 'modified' },
+        { path: 'b.rs', status: 'modified' },
+      ],
+      diffStat: null,
+    },
+    openProblems: [
+      problem('cargo test -p parser', 'test result: FAILED', true),
+      problem('cargo clippy -- -D warnings', 'error: unused variable'),
+      problem('./scripts/bench.sh', 'connection refused'),
+      problem('./scripts/deploy.sh', 'permission denied'),
+    ],
+    claimedDone: {
+      source: 'claude',
+      message: 'Tasks 0–4 are complete',
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: ['`cargo test -p parser` — test result: FAILED (still failing)'],
+    },
+    lastAgent: { source: 'claude', update: 'Tasks 0–4 are complete.', question: null },
+  };
+  const out = terminal(f);
+  expect(out).toBe(golden('large-brief.txt'));
+  const count = out.trimEnd().split('\n').length - 2; // without the details pointer
+  expect(count).toBeGreaterThanOrEqual(8);
+  expect(count).toBeLessThanOrEqual(12);
+});
+
+test('small work: two or three lines', () => {
+  const f = work(clean(rahulFacts()), {
+    size: 'small',
+    activeMinutes: 15,
+    days: 1,
+    commits: [],
+    filesChanged: 1,
+    topFolders: [{ path: 'src/components', files: 1 }],
+    workingOn: 'working on: Rename the submit button to Save.',
+  });
+  const out = lines({ ...f, done: [], lastIntent: 'Rename the submit button to Save.' });
+  expect(out).toEqual([
+    'myapp · last worked 14h ago · about 15 min · branch feature/forgot-password',
+    'You were working on: Rename the submit button to Save.',
+    'Next: Continue: Rename the submit button to Save.',
+  ]);
+});
+
+// ---- what each line says ----
+
+test('a done-claim is one sentence; it replaces the separate problem line', () => {
   const f: BriefFacts = {
     ...rahulFacts(),
     openProblems: [
       problem('cargo test -p billing_adapters', 'test result: FAILED', true),
       problem('npm run lint', 'npm error Missing script: "lint"'),
-      problem('./deploy.sh', 'connection refused'),
     ],
     claimedDone: {
       source: 'claude',
       message: 'All tests pass',
       at: '2026-10-20T18:30:00.000Z',
-      contradictions: [
-        '`cargo test -p billing_adapters` — test result: FAILED (still failing)',
-        '`npm run lint` — npm error Missing script: "lint" (still failing)',
-      ],
+      contradictions: ['`cargo test -p billing_adapters` — test result: FAILED (still failing)'],
     },
   };
   const out = lines(f);
   expect(out).toContain(
     'Claude said "All tests pass", but the billing_adapters tests are still failing.',
   );
-  expect(out.some((l) => l.startsWith('It stopped with:'))).toBe(false);
-  expect(out).toContain('Still open: 2 more problems · 1 uncommitted file');
-  expect(out).toContain(
-    'Pick up with: Make the billing_adapters tests pass (`cargo test -p billing_adapters`)',
+  expect(out).toContain('Also open: 1 more problem · 1 uncommitted file');
+  expect(out.at(-1)).toBe(
+    'Next: Make the billing_adapters tests pass (`cargo test -p billing_adapters`).',
   );
 });
 
@@ -75,7 +151,7 @@ test('a commit claim with uncommitted files reads as a sentence too', () => {
   };
   const out = lines(f);
   expect(out).toContain('Codex said "Committed the fix", but 1 file is still uncommitted.');
-  expect(out).toContain('Pick up with: Commit the 1 file Codex said was committed');
+  expect(out.at(-1)).toBe('Next: Commit the 1 file Codex said was committed.');
 });
 
 test("the agent's final question is the next step", () => {
@@ -83,16 +159,28 @@ test("the agent's final question is the next step", () => {
     ...clean(rahulFacts()),
     lastAgent: { source: 'claude', update: 'The cache is in.', question: 'Should I push?' },
   };
-  const out = lines(f);
-  expect(out).toContain("Claude's last update: The cache is in.");
-  expect(out).toContain("Pick up with: Answer Claude's question: Should I push?");
+  expect(lines(f).at(-1)).toBe("Next: Answer Claude's question: Should I push?");
 });
 
 test('nothing open after commits: all changes committed, start the next task', () => {
   const out = lines(clean(rahulFacts()));
-  expect(out).toContain('Still open: nothing, all changes committed');
-  expect(out).toContain(
-    'Pick up with: Start the next task (everything from the last session is committed)',
+  expect(out).toContain('Stopped: nothing open, all changes committed');
+  expect(out.at(-1)).toBe(
+    'Next: Start the next task (everything from the last session is committed).',
+  );
+});
+
+test('without commits, done says how many files changed and where', () => {
+  const f = work(rahulFacts(), {
+    commits: [],
+    filesChanged: 12,
+    topFolders: [
+      { path: 'apps/server', files: 8 },
+      { path: 'docs', files: 4 },
+    ],
+  });
+  expect(lines({ ...f, done: [] })).toContain(
+    'Done: changed 12 files, most in apps/server and docs',
   );
 });
 
@@ -106,52 +194,10 @@ test('uncommitted files without problems: review and commit them', () => {
     },
   };
   const out = lines(f);
-  expect(out).toContain('Still open: 4 uncommitted files');
-  expect(out).toContain(
-    'Pick up with: Review and commit 4 uncommitted files (a.ts, b.ts, c.ts and 1 more)',
+  expect(out).toContain('Stopped: 4 uncommitted files');
+  expect(out.at(-1)).toBe(
+    'Next: Review and commit 4 uncommitted files (a.ts, b.ts, c.ts and 1 more).',
   );
-  expect(out.some((l) => l.startsWith('Done:'))).toBe(false);
-});
-
-test('a "next:" note wins; done shows the two newest commits and then a count', () => {
-  const f: BriefFacts = {
-    ...rahulFacts(),
-    done: ['feat: a', 'feat: b', 'feat: c', 'Edited 2 files: x.ts, y.ts'],
-    notes: ['next: write the migration'],
-  };
-  const out = lines(f);
-  expect(out).toContain('Done: feat: c · feat: b (+2 more)');
-  expect(out).toContain('Pick up with: write the migration');
-});
-
-test('a polished summary comes first, right after the first line', () => {
-  const out = lines(rahulFacts(), 'Rahul was building password reset; SMTP refuses connections.');
-  expect(out[1]).toBe('Rahul was building password reset; SMTP refuses connections.');
-  expect(out[2]).toMatch(/^You asked:/);
-});
-
-test('terminal lines are cut to 100 characters, the error of a problem stays visible', () => {
-  const f: BriefFacts = {
-    ...rahulFacts(),
-    lastIntent: 'word '.repeat(60).trim(),
-    openProblems: [
-      problem(`./tools/${'deep/'.repeat(20)}run.sh --all`, 'connection refused by host'),
-    ],
-  };
-  const out = renderBrief(f, null, { color: false, now: RAHUL_NOW }).split('\n');
-  for (const l of out) expect([...l].length).toBeLessThanOrEqual(100);
-  expect(out.find((l) => l.includes('It stopped with:'))).toContain('connection refused by host');
-});
-
-test('first line without a branch, and with no git', () => {
-  const f: BriefFacts = { ...rahulFacts(), branch: null };
-  expect(lines(f)[0]).toBe('myapp · 14h ago');
-});
-
-test('only the first line is bold with color', () => {
-  const out = renderBrief(rahulFacts(), null, { color: true, now: RAHUL_NOW }).split('\n');
-  expect(out[0]).toBe('\x1b[1mmyapp · 14h ago · branch feature/forgot-password\x1b[0m');
-  expect(out.slice(1).join('\n')).not.toContain('\x1b[');
 });
 
 test('every note is shown (P11); the newest "next:" note is the next step instead', () => {
@@ -159,7 +205,43 @@ test('every note is shown (P11); the newest "next:" note is the next step instea
   const out = lines(f);
   expect(out).toContain('Note: creds are in 1Password');
   expect(out).not.toContain('Note: next: ask ops');
-  expect(out.at(-1)).toBe('Pick up with: ask ops');
+  expect(out.at(-1)).toBe('Next: ask ops.');
+});
+
+test('without branch words or work topic, "You were" falls back to the first sentence of the request', () => {
+  const f = work(rahulFacts(), { workingOn: null });
+  expect(
+    lines({ ...f, lastIntent: '@docs/plan.md Add rate limiting to the API. Then tests.' }),
+  ).toContain('You were working on: Add rate limiting to the API.');
+});
+
+test('time: minutes, half hours, hours, and days', () => {
+  const header = (activeMinutes: number, days: number) =>
+    lines(work(rahulFacts(), { activeMinutes, days }))[0];
+  expect(header(7, 1)).toContain('· about 5 min ·');
+  expect(header(8, 1)).toContain('· about 10 min ·');
+  expect(header(55, 1)).toContain('· about 1 hour ·');
+  expect(header(100, 1)).toContain('· about 1.5 hours ·');
+  expect(header(750, 3)).toContain('· about 12.5 hours over 3 days ·');
+  expect(header(0, 0)).not.toContain('about');
+});
+
+test('a polished summary comes first, right after the first line', () => {
+  const out = lines(rahulFacts(), 'Rahul was building password reset; SMTP refuses connections.');
+  expect(out[1]).toBe('Rahul was building password reset; SMTP refuses connections.');
+  expect(out[2]).toMatch(/^You were/);
+});
+
+test('terminal lines are cut to 100 characters, the error of a problem stays visible', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [
+      problem(`./tools/${'deep/'.repeat(20)}run.sh --all`, 'connection refused by host'),
+    ],
+  };
+  const out = renderBrief(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  for (const l of out) expect([...l].length).toBeLessThanOrEqual(100);
+  expect(out.find((l) => l.includes('Stopped:'))).toContain('connection refused by host');
 });
 
 test('a long claim is shortened inside the quote, so "but …" stays on the line', () => {
@@ -180,25 +262,96 @@ test('a long claim is shortened inside the quote, so "but …" stays on the line
   expect(line).toMatch(/…", but the billing_adapters tests are still failing\.$/);
 });
 
-// ---- after 15b (owner answer 5): "You asked" is the first sentence, about 100 chars ----
-
-test('"You asked" shows the first sentence of the request', () => {
-  const f: BriefFacts = {
-    ...rahulFacts(),
-    lastIntent: 'Task 3 approved. Now add the cache and a test.',
-  };
-  expect(lines(f)).toContain('You asked: Task 3 approved.');
+test('first line without a branch', () => {
+  expect(lines({ ...rahulFacts(), branch: null })[0]).toBe(
+    'myapp · last worked 14h ago · about 1.5 hours',
+  );
 });
 
-test('leading @file mentions are skipped; a long first sentence is cut at a word, ~100 chars', () => {
+test('only the first line is bold with color', () => {
+  const out = renderBrief(rahulFacts(), null, { color: true, now: RAHUL_NOW }).split('\n');
+  expect(out[0]).toBe(
+    '\x1b[1mmyapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password\x1b[0m',
+  );
+  expect(out.slice(1).join('\n')).not.toContain('\x1b[');
+});
+
+test('files at the project root are "the top folder"', () => {
+  const f = work(rahulFacts(), {
+    commits: [],
+    filesChanged: 2,
+    topFolders: [{ path: '.', files: 2 }],
+  });
+  expect(lines({ ...f, done: [] })).toContain('Done: changed 2 files, most in the top folder');
+});
+
+test('large: a problem the claim names is not listed again, nor are uncommitted files it mentions', () => {
+  const adapters = problem('cargo test -p adapters', 'test result: FAILED', true);
+  const again = problem('cargo test -p adapters -- star_import', 'test result: FAILED', true);
+  const f: BriefFacts = {
+    ...work(rahulFacts(), { size: 'large' }),
+    openProblems: [adapters, again],
+    claimedDone: {
+      source: 'claude',
+      message: 'Done',
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: ['`cargo test -p adapters` — test result: FAILED (still failing)'],
+    },
+  };
+  const out = lines(f);
+  expect(out.filter((l) => l.includes('adapters tests are'))).toHaveLength(1);
+  const commitClaim: BriefFacts = {
+    ...work(rahulFacts(), { size: 'large' }),
+    openProblems: [],
+    claimedDone: {
+      source: 'claude',
+      message: 'Committed',
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: ['1 uncommitted file'],
+    },
+  };
+  expect(lines(commitClaim).filter((l) => l.includes('uncommitted'))).toHaveLength(1);
+});
+
+test('the request fallback uses the same filter: a statement or hedge is not what you were working on', () => {
+  const f = work(rahulFacts(), { workingOn: null });
+  const out = lines({ ...f, lastIntent: 'Our implementation stopped. I mean, why?' });
+  expect(out.some((l) => l.startsWith('You were'))).toBe(false);
+});
+
+test('a claim whose "but" part is long drops the quote instead of losing the "but"', () => {
+  const p = problem('ollama serve', 'exit code 137');
   const f: BriefFacts = {
     ...rahulFacts(),
-    lastIntent: `@docs/plan.md @docs/PROGRESS.md We are continuing ${'the build again '.repeat(10)}today. Second.`,
+    openProblems: [p],
+    claimedDone: {
+      source: 'codex',
+      message: `…chat; the progress document records the completed checks and ${'more '.repeat(20)}`,
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: ['`ollama serve` — exit code 137 (still failing)'],
+    },
   };
-  const line = lines(f).find((l) => l.startsWith('You asked: ')) as string;
-  const asked = line.slice('You asked: '.length);
-  expect(asked.startsWith('We are continuing the build')).toBe(true);
-  expect([...asked].length).toBeLessThanOrEqual(100);
-  expect(asked.endsWith('…')).toBe(true);
-  expect(asked).not.toMatch(/ \S{1,3}…$/); // not a half word
+  const line = renderBrief(f, null, { color: false, now: RAHUL_NOW })
+    .split('\n')
+    .find((l) => l.includes('Codex said')) as string;
+  expect(line).toBe(
+    '  Codex said done, but `ollama serve` still gets killed (exit code 137, often out of memory).',
+  );
+});
+
+test('large: a long folders line keeps its file count', () => {
+  const f = work(rahulFacts(), {
+    size: 'large',
+    filesChanged: 32,
+    topFolders: [
+      { path: 'crates/billing_adapters_engine', files: 12 },
+      { path: 'crates/billing_workspace_loader', files: 10 },
+      { path: 'crates/billing_knowledge_base', files: 6 },
+    ],
+  });
+  const line = renderBrief(f, null, { color: false, now: RAHUL_NOW })
+    .split('\n')
+    .find((l) => l.includes('Most changes in')) as string;
+  expect([...line].length).toBeLessThanOrEqual(100);
+  expect(line.endsWith(' (32 files)')).toBe(true);
 });

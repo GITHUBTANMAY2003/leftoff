@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { cannotRun, runInteractive, type ShellName } from './run-shell.ts';
+import { cannotRun, pathWithoutLeftoff, runInteractive, type ShellName } from './run-shell.ts';
 
 // The shell side of the automatic brief (Task 14): `__leftoff_auto` runs
 // `leftoff brief --auto` on the first prompt and whenever the prompt is in a
@@ -88,7 +88,7 @@ describe.each(SHELLS.map((shell) => [shell, cannotRun(shell)] as const))(
       const r = await runInteractive(
         shell,
         session(shell, ['true']),
-        env({ PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}` }),
+        env({ PATH: `${bin}:${pathWithoutLeftoff()}` }),
       );
       expect(calls(r.stdout)).toEqual([`PATH brief --auto ${tmp}`]);
     });

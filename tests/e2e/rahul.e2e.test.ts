@@ -40,9 +40,9 @@ test('hook claude-session-start returns the same brief as context for the agent'
   expect(lines.at(-1)).toBe(
     'This is an automatic summary of earlier work. Verify against the code before relying on it.',
   );
-  expect(context).toContain('You asked: Add a forgot-password flow: endpoint, reset token, email');
+  expect(context).toContain('You were building forgot password.');
   expect(context).toContain(
-    'It stopped with: `python scripts/send_test_email.py` — SMTP connection refused',
+    'Stopped: `python scripts/send_test_email.py` — SMTP connection refused · 1 uncommitted file',
   );
   // the agent is told what was already tried, so it does not retry it (§1.1)
   expect(context).toContain(
@@ -58,6 +58,7 @@ test('standup for the same scenario', () => {
       'Yesterday:',
       '- Built POST /auth/forgot-password endpoint',
       '- Added reset-token migration',
+      '- Most changes in the top folder (2 files)',
       'Today:',
       '- Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
       'Blockers:',
@@ -73,9 +74,9 @@ test('bare `leftoff` lists the project with its open problem and uncommitted fil
     [
       'Loose ends across 1 project',
       '',
-      'myapp (feature/forgot-password) · 14h ago',
-      '  ✗ `python scripts/send_test_email.py` — SMTP connection refused (3 attempts)',
-      '  • 1 uncommitted file',
+      'myapp (feature/forgot-password) · last worked 14h ago',
+      '  You were building forgot password.',
+      '  Next: Get `python scripts/send_test_email.py` working (also: 1 uncommitted file)',
       '',
       'Run `leftoff resume` inside a project for details',
     ].join('\n'),

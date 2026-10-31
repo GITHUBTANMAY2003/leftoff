@@ -52,10 +52,10 @@ test('real CLI: `leftoff brief --auto` prints the short brief once, then nothing
   expect(first.status).toBe(0);
   expect(first.stderr).toBe('');
   const lines = first.stdout.trimEnd().split('\n');
-  expect(lines[0]).toBe('myapp · 5h ago'); // the narrative brief (Task 15b); not a git repo here
-  expect(lines.at(-1)).toBe('Run `leftoff resume` for details');
+  expect(lines[0]).toBe('myapp · last worked 5h ago · about 1.5 hours'); // not a git repo here
+  expect(lines.at(-1)).toBe('Run `leftoff resume` for the full story');
   expect(lines).toContain(
-    '  It stopped with: `python scripts/send_test_email.py` — SMTP connection refused',
+    '  Stopped: `python scripts/send_test_email.py` — SMTP connection refused',
   );
   expect([run().status, run().stdout]).toEqual([0, '']);
 });

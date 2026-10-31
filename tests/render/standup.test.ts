@@ -136,3 +136,39 @@ test('events of projects not in the standup are ignored', () => {
   });
   expect(s.yesterday).not.toContain('Unrelated');
 });
+
+// ---- Yesterday uses the same "what got done" data as the brief ----
+
+test('Yesterday: short commit subjects (at most 4, then a count) and where most changes were', () => {
+  const root = '/w/parser';
+  const events = [
+    ...[
+      'feat(parser): one',
+      'fix(lexer): two',
+      'feat(parser): three',
+      'docs: four',
+      'chore: five',
+    ].map((s) => ev(root, 'git', 'commit', s)),
+    edit(root, 'claude', 'crates/parser/src/a.rs'),
+    edit(root, 'claude', 'crates/parser/src/b.rs'),
+    edit(root, 'claude', 'docs/notes.md'),
+  ];
+  const s = buildStandup({ factsByProject: [quiet(root)], eventsSince: events });
+  expect(s.yesterday).toEqual([
+    'one',
+    'two',
+    'three',
+    'four',
+    '+1 more commit',
+    'Most changes in crates/parser and docs (3 files)',
+  ]);
+});
+
+test('files at the project root are "the top folder", not "."', () => {
+  const root = '/w/app';
+  const events = [ev(root, 'git', 'commit', 'Add files', { files: ['a.py', 'b.py'] })];
+  expect(buildStandup({ factsByProject: [quiet(root)], eventsSince: events }).yesterday).toEqual([
+    'Add files',
+    'Most changes in the top folder (2 files)',
+  ]);
+});

@@ -267,6 +267,22 @@ describe('gitCollector: only your own commits (owner decision after Task 5)', ()
     expect(readRecentErrors(20).filter((l) => l.includes('user.email'))).toHaveLength(1);
   });
 
+  test('each commit carries the files it changed (work size)', async () => {
+    const root = initRepo(tmp, 'app');
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'a.ts'), '1');
+    writeFileSync(join(root, 'README.md'), '1');
+    git(root, ['add', '-A']);
+    git(root, ['commit', '-q', '-m', 'two files']);
+    commit(root, 'one more');
+    track(root);
+    const events = (await gitCollector.collect(ctx)).events.filter((e) => e.kind === 'commit');
+    expect(events.map((e) => [e.summary, e.data.files])).toEqual([
+      ['two files', ['README.md', 'src/a.ts']],
+      ['one more', ['one_more.txt']],
+    ]);
+  });
+
   test('user.email unset: all commits are kept and it is logged once', async () => {
     const root = initRepo(tmp, 'app', 'main', null);
     commit(root, 'mine', undefined, 'me@example.com');

@@ -87,8 +87,10 @@ test('due after 4h gap, not due twice', async () => {
   seed(5);
   expect(withRepo((repo) => isBriefDue(project, repo, config(), NOW))).toBe(true);
   const out = await runBriefAuto(project, deps());
-  expect(out.split('\n')[0]).toBe('myapp · 5h ago · branch feature/forgot-password');
-  expect(out.split('\n').at(-1)).toBe('Run `leftoff resume` for details');
+  expect(out.split('\n')[0]).toBe(
+    'myapp · last worked 5h ago · about 1.5 hours · branch feature/forgot-password',
+  );
+  expect(out.split('\n').at(-1)).toBe('Run `leftoff resume` for the full story');
   expect(await runBriefAuto(project, deps())).toBe(''); // shown for this activity
   expect(withRepo((repo) => isBriefDue(project, repo, config(), NOW))).toBe(false);
   // Newer activity (still ≥ 4 h old) makes it due again.

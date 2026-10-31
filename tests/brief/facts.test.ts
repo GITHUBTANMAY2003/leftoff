@@ -994,3 +994,42 @@ test.each([129, 130, 143])(
     expect(problems.map((p) => p.command)).toEqual(['make deploy', 'npm test']);
   },
 );
+
+// ---- the "where you left off" stretch (work size) ----
+
+test('the stretch joins work sessions less than 48 h apart, and stops at a longer break', () => {
+  const day = (d: number, h: number) => new Date(Date.UTC(2026, 9, d, h)).toISOString();
+  const events = [
+    at(day(10, 10), 'user_prompt', 'old work before a long break'),
+    at(day(14, 10), 'user_prompt', 'start the parser work'), // 4 days later: a new stretch
+    at(day(14, 11), 'commit', 'feat(parser): first', {}, 'git'),
+    at(day(15, 22), 'commit', 'feat(lexer): second', {}, 'git'), // 35 h later: same stretch
+    at(day(16, 9), 'command', 'git log', { command: 'git log', exitCode: 0 }, 'shell'), // look-around
+  ];
+  const f = buildFacts(RAHUL_ROOT, deps(events, { now: new Date(day(17, 9)) }));
+  expect(f.work.from).toBe(day(14, 10));
+  expect(f.work.to).toBe(day(15, 22));
+  expect(f.work.commits).toEqual(['first', 'second']);
+});
+
+test('the stretch is at most 14 days long', () => {
+  const events = Array.from({ length: 20 }, (_, i) =>
+    at(new Date(Date.UTC(2026, 9, 1 + i, 10)).toISOString(), 'user_prompt', `day ${i} work item`),
+  );
+  const f = buildFacts(RAHUL_ROOT, deps(events, { now: new Date(Date.UTC(2026, 9, 21, 10)) }));
+  expect(Date.parse(f.work.to) - Date.parse(f.work.from)).toBeLessThanOrEqual(14 * 86_400_000);
+});
+
+test('the error shown is the first line that reads like an error, not echoed commands', () => {
+  const output = [
+    '/usr/bin/make lint',
+    'uv run ruff check src',
+    'All checks passed!',
+    '/usr/bin/make test',
+    '==================================== ERRORS ====================================',
+    '________________ ERROR collecting tests/test_kernel.py ________________',
+    'ImportError while importing test module',
+  ].join('\n');
+  const [p] = findOpenProblems(timeline(fail('make run-ci', output)));
+  expect(p?.error).toBe('ERROR collecting tests/test_kernel.py');
+});
