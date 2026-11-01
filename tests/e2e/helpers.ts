@@ -253,3 +253,11 @@ export async function measureCd(
     });
   });
 }
+
+// A performance budget (§1.12): as written with PERF_STRICT=1 (your machine,
+// the dogfood checklist); 3× otherwise, for shared CI runners. Measured values
+// are always printed, so CI logs still show how close they are.
+const CI_FACTOR = 3;
+export function budget(ms: number): number {
+  return process.env.PERF_STRICT === '1' ? ms : ms * CI_FACTOR;
+}

@@ -28,6 +28,12 @@ Anything unexpected goes into `docs/dogfood-log.md`.
 
 ## Weekly
 
+0. **Performance budgets, strict** (CI only checks 3× the budgets; run with nothing else busy):
+   ```bash
+   PERF_STRICT=1 npm run test:e2e
+   ```
+
+
 6. **Probe failures hide nothing real** (look-around commands that "failed")
    ```bash
    sqlite3 ~/.leftoff/leftoff.db "select ts, summary from events where json_extract(data,'$.probe') = 1 order by ts desc limit 50"

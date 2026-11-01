@@ -1166,7 +1166,7 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', ...
 
 **As built (see `docs/reports/task-16.md`):**
 - The scenario is written the way the real tools write it (a git repo with dated commits, a Claude Code transcript in the real record format, shell-log lines) in the repo's git-ignored `.e2e-tmp/`, because loose ends leave out folders under the system temp dir (Task 15b). `resume` output must equal the narrative golden `tests/render/golden/rahul-brief.txt`.
-- The e2e project runs one file at a time (`fileParallelism: false`), so budgets are measured without parallel test load. Each perf test prints median and p95.
+- The e2e project runs one file at a time (`fileParallelism: false`), so budgets are measured without parallel test load. Each perf test prints median and p95. Budgets are strict only with `PERF_STRICT=1` (your machine, the dogfood checklist); on CI runners each is 3× (GitHub's ubuntu runner took 2259 ms for the 50 MB ingest). The CI job has `timeout-minutes: 20`.
 - Step 2a is built as a **"quiet until" marker** rather than a "due" marker: whether a brief is due depends on time passing, so nothing would create a "due" file at the right moment. `brief --auto` writes `~/.leftoff/shell/quiet/<project path, % → %25, / → %2F>` with the epoch second before which no brief can be due (last activity + gap when not yet shown; else now + gap; removed when a due brief was too slow to print). The hooks find the project root by walking up for `.git` from the real path (`${PWD:A}` in zsh, `pwd -P` in bash, `builtin realpath` in fish) and skip node while the marker's time is in the future.
 
 ---

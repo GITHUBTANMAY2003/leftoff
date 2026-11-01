@@ -6,6 +6,7 @@ import { openDb } from '../../src/store/db.ts';
 import { createRepo } from '../../src/store/repo.ts';
 import { git } from '../helpers/git.ts';
 import {
+  budget,
   CLI,
   e2eDir,
   hasShell,
@@ -30,10 +31,11 @@ beforeEach(() => {
 });
 afterEach(async () => cleanup());
 
+const MODE = process.env.PERF_STRICT === '1' ? 'strict budgets' : 'CI: 3× budgets';
 const report = (name: string, ms: number[]) => {
   const { median, p95 } = stats(ms);
   console.log(
-    `${name}: median ${median.toFixed(1)} ms, p95 ${p95.toFixed(1)} ms (${ms.length} runs)`,
+    `${name}: median ${median.toFixed(1)} ms, p95 ${p95.toFixed(1)} ms (${ms.length} runs; ${MODE})`,
   );
   return { median, p95 };
 };
@@ -41,7 +43,7 @@ const report = (name: string, ms: number[]) => {
 test('resume p95 < 300 ms with no new data (20 runs)', () => {
   run(['resume'], { cwd: s.repo, env: s.env }); // the first run reads the scenario
   const ms = Array.from({ length: 20 }, () => run(['resume'], { cwd: s.repo, env: s.env }).ms);
-  expect(report('resume', ms).p95).toBeLessThan(300);
+  expect(report('resume', ms).p95).toBeLessThan(budget(300));
 });
 
 test('ingest of a 50 MB new transcript < 1500 ms', () => {
@@ -80,9 +82,11 @@ test('ingest of a 50 MB new transcript < 1500 ms', () => {
     lines.join('\n') + '\n',
   );
   const r = run(['internal', 'ingest'], { cwd: s.repo, env: s.env });
-  console.log(`ingest of ${(bytes / 1024 / 1024).toFixed(1)} MB: ${r.ms.toFixed(0)} ms`);
+  console.log(
+    `ingest of ${(bytes / 1024 / 1024).toFixed(1)} MB: ${r.ms.toFixed(0)} ms (budget ${budget(1500)} ms; ${MODE})`,
+  );
   expect(r.status).toBe(0);
-  expect(r.ms).toBeLessThan(1500);
+  expect(r.ms).toBeLessThan(budget(1500));
   // …and it read the whole file: one command per tool_use/tool_result pair
   const db = openDb(join(s.env.LEFTOFF_HOME as string, 'leftoff.db'));
   try {
@@ -115,7 +119,7 @@ test('shell hook overhead < 5 ms per command (zsh, 200 iterations, median)', () 
   });
   const ms = r.stdout.trim().split('\n').map(Number);
   expect(ms).toHaveLength(200);
-  expect(report('zsh hook per command', ms).median).toBeLessThan(5);
+  expect(report('zsh hook per command', ms).median).toBeLessThan(budget(5));
 });
 
 // Task 16 Step 2a: with no brief due, cd into another project costs < ~20 ms.
@@ -140,7 +144,7 @@ test.each(['zsh', 'bash', 'fish'] as const)(
     const env = { ...s.env, LEFTOFF_INTERNAL: undefined };
     const ms = await measureCd(shell, resolve(import.meta.dirname, '../../shell'), [a, b], env);
     expect(ms).toHaveLength(20);
-    expect(report(`${shell} cd, no brief due`, ms).median).toBeLessThan(20);
+    expect(report(`${shell} cd, no brief due`, ms).median).toBeLessThan(budget(20));
   },
 );
 
@@ -150,7 +154,7 @@ test.each([
   ['claude-session-start', 2000],
   ['claude-stop', 500],
   ['claude-session-end', 500],
-] as const)('%s through the shim: median and p95 within %i ms (20 runs)', (hook, budget) => {
+] as const)('%s through the shim: median and p95 within %i ms (20 runs)', (hook, limit) => {
   const lhome = s.env.LEFTOFF_HOME as string;
   const shim = join(lhome, 'bin', 'leftoff');
   mkdirSync(join(lhome, 'bin'), { recursive: true });
@@ -174,6 +178,6 @@ test.each([
     return performance.now() - started;
   });
   const { median, p95 } = report(`hook ${hook}`, ms);
-  expect(median).toBeLessThan(budget);
-  expect(p95).toBeLessThan(budget);
+  expect(median).toBeLessThan(budget(limit));
+  expect(p95).toBeLessThan(budget(limit));
 });

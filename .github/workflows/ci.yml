@@ -13,6 +13,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [22, 24, 26]
     runs-on: ${{ matrix.os }}
+    # Safety net: a hung test must not hold a runner for hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
