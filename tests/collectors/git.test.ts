@@ -437,3 +437,24 @@ test('the project being resumed is read first, even if it was checked most recen
   expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['new in c']);
   expect(b).toBeTruthy();
 });
+
+test('re-reading a repo for a newer cursor format covers the retention window, not just a first run', async () => {
+  const root = initRepo(tmp, 'app', 'main', 'me@example.com');
+  const twentyDaysAgo = new Date(Date.now() - 20 * 86_400_000).toISOString();
+  commit(root, 'older than a week', twentyDaysAgo, 'me@example.com');
+  track(root);
+  const head = git(root, ['rev-parse', 'HEAD']);
+  // a cursor saved by an older leftoff: HEAD already read, older author match
+  ctx.repo.setCursor(
+    'git',
+    root,
+    JSON.stringify({
+      commit: head,
+      reflogAt: null,
+      reflogKeys: [],
+      noEmailLogged: false,
+      authorMatch: 1,
+    }),
+  );
+  expect(summaries(await gitCollector.collect(ctx), 'commit')).toEqual(['older than a week']);
+});

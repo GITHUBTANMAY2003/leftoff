@@ -17,6 +17,9 @@ export interface WorkSummary {
   commits: string[]; // subjects without their type prefix, oldest first
   filesChanged: number;
   topFolders: { path: string; files: number }[]; // at most 3, most files first
+  folderCount: number; // all folders with changes ("(+N more folders)")
+  hashes: string[]; // the commits' hashes, oldest first (the diff starts before the first)
+  commitFiles: string[] | null; // the commits' files; null when one was stored without them
   workingOn: string | null; // "building forgot password", "working on parser and lexer", …
   size: WorkSize;
 }
@@ -95,7 +98,9 @@ export function branchPhrase(branch: string | null): string | null {
   }
   const wordy = kept.filter((w) => (w.match(/[a-z]/gi)?.length ?? 0) >= 3);
   if (wordy.length < 2) return null;
-  return `${verb} ${kept.join(' ')}${ticket ? ` (${ticket})` : ''}`;
+  // an issue goes first: "fixing issue #15: s3vectors error mapping"
+  if (ticket === null) return `${verb} ${kept.join(' ')}`;
+  return `${verb} ${ticket.replace(/^issue /, 'issue #')}: ${kept.join(' ')}`;
 }
 
 // ---- requests ----
@@ -151,7 +156,7 @@ function changedFiles(events: WorkEvent[], root: string): string[] {
   return [...files];
 }
 
-function folderOf(file: string): string {
+export function folderOf(file: string): string {
   const dirs = file.split('/').slice(0, -1);
   if (dirs.length === 0) return '.';
   const first = dirs[0] as string;
@@ -259,6 +264,17 @@ export function summarizeWork(
   const minutes = sorted.length > 0 ? activeMinutes(sorted, opts.gapMinutes) : 0;
   const days = workDays(sorted);
   const folders = topFolders(files);
+  const commitEvents = sorted.filter((e) => e.kind === 'commit');
+  const listed = commitEvents.every((e) => Array.isArray(e.data.files));
+  const commitFiles = listed
+    ? [
+        ...new Set(
+          commitEvents.flatMap((e) =>
+            (e.data.files as unknown[]).filter((x): x is string => typeof x === 'string'),
+          ),
+        ),
+      ].sort()
+    : null;
   const request = sorted
     .filter((e) => e.kind === 'user_prompt')
     .map((e) => substantiveSentence(e.summary))
@@ -291,6 +307,9 @@ export function summarizeWork(
     commits,
     filesChanged: files.length,
     topFolders: folders,
+    folderCount: new Set(files.map(folderOf)).size,
+    hashes: commitEvents.flatMap((e) => (typeof e.data.hash === 'string' ? [e.data.hash] : [])),
+    commitFiles,
     workingOn,
     size,
   };

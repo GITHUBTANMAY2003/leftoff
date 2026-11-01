@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest';
-import { looksLikeTestFailure, TEST_FAILURE_PATTERNS } from '../../src/collectors/test-failures.ts';
+import {
+  isMaskedTestFailure,
+  looksLikeTestFailure,
+  TEST_FAILURE_PATTERNS,
+} from '../../src/collectors/test-failures.ts';
 
 test.each([
   ['node test runner', 'ℹ tests 3\nℹ pass 2\nℹ fail 1\nℹ cancelled 0'],
@@ -44,4 +48,13 @@ test('every pattern is named and is a plain RegExp (one place for contributors)'
     expect(p.pattern).toBeInstanceOf(RegExp);
     expect(p.pattern.global).toBe(false); // global regexes keep state between .test() calls
   }
+});
+
+test('failed tests in the output count as failed however the chain ends (owner decision after 15e)', () => {
+  expect(
+    isMaskedTestFailure('cargo test; echo done', 'test result: FAILED. 3 passed; 1 failed'),
+  ).toBe(true);
+  expect(isMaskedTestFailure('npm test && echo ok', '1 failed')).toBe(true);
+  expect(isMaskedTestFailure('npm test', '1 failed')).toBe(false); // exit 0 alone is trusted
+  expect(isMaskedTestFailure('cargo build; echo done', 'Finished')).toBe(false);
 });

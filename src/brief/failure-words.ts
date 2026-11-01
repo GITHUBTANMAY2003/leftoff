@@ -205,7 +205,7 @@ const ERROR_WORDS: {
   action?: (m: RegExpExecArray) => string;
 }[] = [
   {
-    pattern: /ERROR collecting (\S+)/,
+    pattern: /ERROR collecting (?:\S*\/)?(\S+)/,
     text: (m) => `pytest can't load ${m[1]}`,
     action: (m) => `fix the test-loading error in ${m[1]}`,
   },
@@ -395,12 +395,20 @@ function describeBase(command: string | null, error: string): Omit<FailureWords,
         fix: `Fix the build ${run}`,
       };
     case 'check':
-      return {
-        category: 'check',
-        now: 'the project checks fail',
-        still: 'the project checks still fail',
-        fix: `Make the project checks pass ${run}`,
-      };
+      // a CI target or script reads "CI fails" (owner example after Task 15e)
+      return /(^|[\s:/-])ci([\s:/-]|$)/.test(shown)
+        ? {
+            category: 'check',
+            now: 'CI fails',
+            still: 'CI still fails',
+            fix: `Make CI pass ${run}`,
+          }
+        : {
+            category: 'check',
+            now: 'the project checks fail',
+            still: 'the project checks still fail',
+            fix: `Make the project checks pass ${run}`,
+          };
     case 'make':
       return {
         category: 'make',

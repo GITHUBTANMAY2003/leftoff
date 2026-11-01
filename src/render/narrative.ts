@@ -153,7 +153,12 @@ const commitsText = (f: BriefFacts, shown: number) => {
   const newest = [...f.work.commits].reverse();
   return `${plural(newest.length, 'commit')}: ${newest.slice(0, shown).join('; ')}`;
 };
-const foldersText = (f: BriefFacts) => joinAnd(f.work.topFolders.map((t) => folderName(t.path)));
+// At most 3 folders, then "(+N more folders)" (owner decision after Task 15e).
+const foldersText = (f: BriefFacts) => {
+  const more = f.work.folderCount - f.work.topFolders.length;
+  const list = joinAnd(f.work.topFolders.map((t) => folderName(t.path)));
+  return more > 0 ? `${list} (+${more} more ${more === 1 ? 'folder' : 'folders'})` : list;
+};
 
 // ---- writing lines ----
 

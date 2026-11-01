@@ -7,7 +7,6 @@ import { basename, join } from 'node:path';
 // sentence of the first paragraph ("<name> is …" dropped). Badges, images,
 // HTML and code are skipped; markdown emphasis is dropped.
 
-const MAX_CHARS = 80;
 const README = /^readme(\.(md|markdown|rst|txt))?$/i;
 const NOT_PROSE = /^(\[!\[|!\[|<|```|~~~|\||>|\[.*\]\(.*\)$|-{3,}$|={3,}$)/;
 
@@ -18,13 +17,6 @@ const plain = (text: string) =>
     .trim();
 const same = (a: string, b: string) =>
   a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-function clipAtWord(text: string): string {
-  const chars = [...text];
-  if (chars.length <= MAX_CHARS) return text;
-  const cut = chars.slice(0, MAX_CHARS - 1).join('');
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 1)).replace(/[\s,;:]+$/, '')}…`;
-}
 
 export function readmeLine(text: string, project: string): string | null {
   const lines = text.split('\n').map((l) => l.trim());
@@ -42,7 +34,7 @@ export function readmeLine(text: string, project: string): string | null {
     }
     break;
   }
-  if (heading !== null && heading !== '' && !same(heading, project)) return clipAtWord(heading);
+  if (heading !== null && heading !== '' && !same(heading, project)) return heading;
   // The first prose line after the heading, then its first sentence.
   let fenced = false;
   for (const l of lines.slice(start)) {
@@ -54,7 +46,7 @@ export function readmeLine(text: string, project: string): string | null {
     sentence = sentence.replace(/[.!]+$/, '');
     const named = new RegExp(`^${project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+is\\s+`, 'i');
     sentence = sentence.replace(named, '');
-    return sentence === '' ? null : clipAtWord(sentence);
+    return sentence === '' ? null : sentence; // whole: cut only at the sentence boundary
   }
   return null;
 }

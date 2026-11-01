@@ -43,14 +43,9 @@ test.each([
   expect(readmeLine(text, project)).toBe(expected);
 });
 
-test('a long line is cut at a word, about 80 characters', () => {
-  const line = readmeLine(
-    `# x\n\nX is ${'a very long description '.repeat(10)}here.`,
-    'x',
-  ) as string;
-  expect([...line].length).toBeLessThanOrEqual(80);
-  expect(line.endsWith('…')).toBe(true);
-  expect(line).not.toMatch(/ \S{1,3}…$/);
+test('a long first sentence is kept whole: cut at its sentence boundary, never mid-word', () => {
+  const long = `X is ${'a very long description '.repeat(6)}here. Second sentence.`;
+  expect(readmeLine(`# x\n\n${long}`, 'x')).toBe(`${'a very long description '.repeat(6)}here`);
 });
 
 test('nothing usable: null', () => {

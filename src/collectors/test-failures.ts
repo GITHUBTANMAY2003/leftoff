@@ -1,4 +1,4 @@
-import { endsWithFilter, endsWithTrimmingPipe } from '../model/event.ts';
+import { chainSteps, endsWithFilter, endsWithTrimmingPipe } from '../model/event.ts';
 
 // How leftoff recognizes a failed test run in command output (test_failed
 // events). Deterministic: plain regular expressions, no AI. To support another
@@ -29,8 +29,13 @@ export function looksLikeTestFailure(output: string): boolean {
 // head, cat, less; owner decision after Task 11) or into any text filter such
 // as grep (after Task 13), while that output shows a failed test run. Without
 // such a pipe, exit 0 is trusted.
+// Also any `;` / `&&` chain (owner decision after Task 15e): `cargo test; echo
+// done` exits 0 whatever the tests did, so a run whose output shows failed
+// tests counts as failed however the chain ends.
 export function isMaskedTestFailure(command: string, output: string): boolean {
-  return (endsWithTrimmingPipe(command) || endsWithFilter(command)) && looksLikeTestFailure(output);
+  const masked =
+    endsWithTrimmingPipe(command) || endsWithFilter(command) || chainSteps(command).length > 1;
+  return masked && looksLikeTestFailure(output);
 }
 
 // A command that "failed" only because the text filter it was piped into exited

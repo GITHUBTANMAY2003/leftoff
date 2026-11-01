@@ -4,7 +4,7 @@ import { agentName } from '../brief/next-step.ts';
 import { relativeAgo } from '../core/time.ts';
 import { youWereLine } from './narrative.ts';
 import { fit, LINE_WIDTH, painter } from './terminal.ts';
-import { plural } from './text.ts';
+import { plural, wrap } from './text.ts';
 
 // `leftoff` / `leftoff loops` (spec §1.8): per project, when you last worked
 // on it with its status, what you were working on, and the next step (owner
@@ -57,14 +57,15 @@ function splitOutsideBrackets(text: string): string[] {
 
 function nextLine(next: string): string {
   let text = /[.!?…]$/.test(next) ? next : `${next}.`;
-  const room = LINE_WIDTH - INDENT.length - 'Next: '.length;
+  const room = LINE_WIDTH - INDENT.length - 'Start here: '.length;
   // Too long: the first action only (loose ends are the overview; the full
   // step is in `leftoff resume`).
   if ([...text].length > room) {
     const first = splitOutsideBrackets(next)[0] as string;
     text = `${[...first].length > room - 1 ? first.replace(/ \([^()]*\)$/, '') : first}.`;
   }
-  return `${INDENT}${fit(INDENT, `Next: ${text}`)}`;
+  const lower = /^[A-Z][a-z]/.test(text) ? text[0]?.toLowerCase() + text.slice(1) : text;
+  return `${INDENT}${fit(INDENT, `Start here: ${lower}`)}`;
 }
 
 export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: boolean }): string {
@@ -74,7 +75,8 @@ export function renderLooseEnds(items: LooseEnds[], now: Date, opts: { color: bo
     const [first = '', ...rest] = headerLines(item, now);
     const out = [p.bold(first), ...rest];
     const youWere = youWereLine(item.workingOn, item.lastIntent);
-    if (youWere) out.push(`${INDENT}${fit(INDENT, youWere)}`);
+    // one line from "What you did": wrapped, never cut (owner decision after 15e)
+    if (youWere) out.push(...wrap(INDENT, youWere, LINE_WIDTH));
     if (item.nextStep) out.push(nextLine(item.nextStep));
     return out.join('\n');
   });

@@ -11,6 +11,7 @@ import type { PolishProvider } from '../../src/polish/types.ts';
 import { ensureHome, paths } from '../../src/core/paths.ts';
 import { openDb } from '../../src/store/db.ts';
 import { createRepo } from '../../src/store/repo.ts';
+import { makeEvent } from '../../src/model/event.ts';
 import { rahulEvents } from '../brief/rahul.ts';
 
 let tmp: string;
@@ -69,36 +70,95 @@ test('resume in a project with no data prints a friendly line and exits 0', asyn
   expect(r.output).toContain('No activity recorded yet');
 });
 
-test('resume prints the narrative brief for the project of cwd (Task 15b)', async () => {
+test('resume prints three sections: what you did, files you changed, what is left (after 15e)', async () => {
   seed();
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
   expect(r.exitCode).toBe(0);
-  // not a git repo here: no branch, so "You were" comes from the first commit
+  // not a git repo here: no branch, no diff, so no "Files you changed"
   expect(r.output).toMatch(
-    /^myapp · last worked \S+ ago · about 1\.5 hours\n {2}You were working on: Built POST \/auth\/forgot-password endpoint\./,
+    /^myapp · last worked \S+ ago · about 1\.5 hours\n {2}What you did\n {4}You were working on: Built POST \/auth\/forgot-password endpoint\./,
   );
+  expect(r.output).not.toContain('Files you changed');
   expect(r.output).toContain(
-    '  Stopped: `python scripts/send_test_email.py` — SMTP connection refused',
+    "  What's left\n    • `python scripts/send_test_email.py` — SMTP connection refused",
   );
-  expect(r.output.split('\n').at(-1)).toBe(
-    'Exact commands, errors and attempts: `leftoff resume --details`',
+  expect(r.output).toMatch(
+    /\n {4}Start here: fix "SMTP connection refused", then run\s+`python scripts\/send_test_email.py` again\.$/,
   );
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
 });
 
-test('resume --details: the same plain words, each problem as a numbered block', async () => {
+test('resume --details: the same three sections, each problem with its error, command and attempts', async () => {
   seed();
   const r = await runResume({ cwd: project, format: 'details', polish: false });
-  expect(r.output).toMatch(/^myapp · last worked /);
   expect(r.output).toContain(
-    '  1. `python scripts/send_test_email.py` — SMTP connection refused\n     Error output: SMTP connection refused\n     Command: python scripts/send_test_email.py\n     Files: scripts/send_test_email.py\n     Already tried: ',
+    '    • `python scripts/send_test_email.py` — SMTP connection refused\n      Error: SMTP connection refused\n      Command: python scripts/send_test_email.py\n      Already tried: ',
+  );
+});
+
+test('in a git repo, "Files you changed" comes from the work window\'s diff', async () => {
+  const git = (args: string[]) =>
+    spawnSync('git', ['-C', project, ...args], {
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@example.com',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@example.com',
+      },
+    });
+  git(['init', '-q', '-b', 'feature/password-reset']);
+  git(['config', 'user.email', 't@example.com']);
+  writeFileSync(join(project, 'app.py'), 'print(1)\n');
+  git(['add', '-A']);
+  const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
+  spawnSync('git', ['-C', project, 'commit', '-q', '-m', 'init'], {
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@example.com',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@example.com',
+      GIT_AUTHOR_DATE: fiveDaysAgo,
+      GIT_COMMITTER_DATE: fiveDaysAgo,
+    },
+  }); // before the work window
+  mkdirSync(join(project, 'tests'));
+  writeFileSync(
+    join(project, 'mailer.py'),
+    '"""Sends password-reset emails."""\ndef send_reset(user):\n    pass\n',
+  );
+  writeFileSync(
+    join(project, 'tests', 'test_mailer.py'),
+    'def test_sends():\n    pass\ndef test_retries():\n    pass\n',
+  );
+  writeFileSync(join(project, 'app.py'), 'from mailer import send_reset\nprint(1)\n');
+  seed([
+    makeEvent({
+      source: 'claude',
+      kind: 'user_prompt',
+      projectRoot: project,
+      ts: new Date(Date.now() - 600_000).toISOString(),
+      sessionRef: 's',
+      summary: 'Add password-reset emails',
+      dedupeKey: 'git-test-prompt',
+    }),
+  ]);
+  const r = await runResume({ cwd: project, format: 'terminal', polish: false });
+  expect(r.output.replace(/\s+/g, ' ')).toContain(
+    'You added a new module (sends password-reset emails) and 2 tests.',
   );
   expect(r.output).toContain(
-    '  Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
+    [
+      '  Files you changed',
+      '    • mailer.py — new: sends password-reset emails',
+      '    • app.py — now uses the new send_reset',
+      '    • test_mailer.py — new: 2 tests for mailer',
+    ].join('\n'),
   );
-  // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
-  expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
 });
 
 test('--project picks another project; --json and --md formats', async () => {
@@ -121,7 +181,7 @@ test('resume ingests first: a failing command in the shell log shows up in the s
     [Date.now(), 2, 15, 42, project, 'make deploy'].join('\t') + '\n',
   );
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
-  expect(r.output).toContain('  Next: Get `make deploy` working.'); // small work
+  expect(r.output).toContain('    Start here: get `make deploy` working.');
   // git ran fine (installed; this folder just isn't a repo); no agent logs exist here.
   const json = JSON.parse(
     (await runResume({ cwd: project, format: 'json', polish: false })).output,
@@ -181,7 +241,7 @@ test('--polish runs the polish provider now and shows its paragraph above the fa
   const out = (await runResume({ cwd: project, format: 'terminal', polish: true })).output;
   const lines = out.split('\n');
   expect(lines[1]).toBe('  Polished now: SMTP still blocks resets.'); // first, after line 1
-  expect(out).toContain('Next:');
+  expect(out).toContain('Start here:');
   // Saved: a later resume without --polish reuses it while the facts match.
   expect((await runResume({ cwd: project, format: 'terminal', polish: false })).output).toContain(
     'Polished now',
@@ -194,7 +254,7 @@ test('--polish while polish is off prints one hint line to stderr and still show
   expect(r.stderr).toBe(
     'Polish is off. Turn it on with `leftoff setup` or `leftoff config set polish.provider <claude-cli|ollama|…>`.',
   );
-  expect(r.output).toContain('Next:');
+  expect(r.output).toContain('Start here:');
   expect(
     (await runResume({ cwd: project, format: 'terminal', polish: false })).stderr,
   ).toBeUndefined();
@@ -253,8 +313,8 @@ test('note appears in next resume output', async () => {
   await runNote(project, 'SMTP creds are in 1Password');
   await runNote(project, 'next: ask ops whether port 587 is open');
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
-  expect(r.output).toContain('  Note: SMTP creds are in 1Password');
-  expect(r.output).toContain('  Next: ask ops whether port 587 is open.');
+  expect(r.output).toContain('    • Note: SMTP creds are in 1Password');
+  expect(r.output).toContain('    Start here: ask ops whether port 587 is open.');
   const details = await runResume({ cwd: project, format: 'details', polish: false });
-  expect(details.output).toContain('  Note: SMTP creds are in 1Password');
+  expect(details.output).toContain('    • Note: SMTP creds are in 1Password');
 });

@@ -427,21 +427,40 @@ test('a claim line too long for the terminal wraps instead of being cut', () => 
   const f: BriefFacts = {
     ...rahulFacts(),
     openProblems: [
-      problem('make run-ci', 'ERROR collecting tests/test_semantic_kernel_and_more.py'),
+      problem(
+        'make run-ci',
+        'ERROR collecting tests/test_semantic_kernel_and_more_cases_for_the_store.py',
+      ),
     ],
     claimedDone: {
       source: 'codex',
       message: '…finished…',
       at: '2026-10-20T18:30:00.000Z',
       contradictions: [
-        '`make run-ci` — ERROR collecting tests/test_semantic_kernel_and_more.py (still failing)',
+        '`make run-ci` — ERROR collecting tests/test_semantic_kernel_and_more_cases_for_the_store.py (still failing)',
       ],
     },
   };
   const out = renderBrief(f, null, { color: false, now: RAHUL_NOW }).split('\n');
   const at = out.findIndex((l) => l.includes('Codex said'));
   expect(`${out[at]} ${out[at + 1]?.trim()}`).toBe(
-    "  Codex said it was done, but the project checks still fail: pytest can't load tests/test_semantic_kernel_and_more.py.",
+    "  Codex said it was done, but CI still fails: pytest can't load test_semantic_kernel_and_more_cases_for_the_store.py.",
   );
   for (const l of out) expect(l).not.toMatch(/…$/);
+});
+
+test('a folder list shows at most 3, then "(+N more folders)"', () => {
+  const f = work(rahulFacts(), {
+    commits: [],
+    filesChanged: 12,
+    folderCount: 5,
+    topFolders: [
+      { path: 'apps/server', files: 6 },
+      { path: 'docs', files: 3 },
+      { path: 'tests', files: 1 },
+    ],
+  });
+  expect(lines({ ...f, done: [] })).toContain(
+    'Done: changed 12 files, most in apps/server, docs and tests (+2 more folders)',
+  );
 });

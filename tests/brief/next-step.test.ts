@@ -134,7 +134,7 @@ test('the next step covers the top problems, then says what to run again', () =>
     ],
   };
   expect(plainNextStep(f)).toBe(
-    'Fix the test-loading error in tests/test_kernel.py, format the 3 files, then run `make run-ci` again',
+    'Fix the test-loading error in test_kernel.py, format the 3 files, then run `make run-ci` again',
   );
 });
 

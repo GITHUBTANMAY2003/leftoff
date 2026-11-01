@@ -120,7 +120,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
   const { makeEvent } = await import('../../src/model/event.ts');
   const { buildFacts } = await import('../../src/brief/facts.ts');
   const { DEFAULT_CONFIG } = await import('../../src/core/config.ts');
-  const { renderDetails } = await import('../../src/render/details.ts');
+  const { renderStory } = await import('../../src/render/story.ts');
   const { renderAutoBrief } = await import('../../src/render/auto.ts');
   const { renderLooseEnds } = await import('../../src/render/loose-ends.ts');
   const { plainNextStep } = await import('../../src/brief/next-step.ts');
@@ -157,7 +157,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
     const want = '`cargo test -p billing_adapters` — test result: FAILED';
     const cleaned = '`cargo test -p billing_adapters`';
     const outputs = [
-      renderDetails(f, null, { color: false, now: RAHUL_NOW }),
+      renderStory(f, null, { color: false, now: RAHUL_NOW, details: true }),
       renderAutoBrief(f, { color: false, now: RAHUL_NOW }),
       renderLooseEnds(
         [

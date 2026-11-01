@@ -130,7 +130,7 @@ test('a header too long for one line moves the branch to its own line; nothing i
   expect(out.slice(2, 6)).toEqual([
     'hackerrank-orchestrate-october26 · last worked 14h ago · Claude said done · 2 uncommitted files · stale',
     '  on branch feature/a-rather-long-branch-name-for-the-audit',
-    '  Next: Commit the 2 files Claude said were committed.',
+    '  Start here: commit the 2 files Claude said were committed.',
     '',
   ]);
   expect(out.join('\n')).not.toContain('…');
@@ -143,7 +143,7 @@ test('a long next step keeps its first action instead of being cut', () => {
       nextStep: `Fix "SMTP connection refused", then run \`python scripts/send_test_email.py --with-a-long-flag\` again`,
     }),
   ]);
-  expect(out).toContain('  Next: Fix "SMTP connection refused".\n');
+  expect(out).toContain('  Start here: fix "SMTP connection refused".\n');
 });
 
 test('the first action is split at a comma outside brackets', () => {
@@ -153,5 +153,16 @@ test('the first action is split at a comma outside brackets', () => {
       nextStep: `Review and commit 24 uncommitted files (${'src/brief/facts.ts, '.repeat(4)}and 20 more), then push`,
     }),
   ]);
-  expect(out).toContain('  Next: Review and commit 24 uncommitted files.\n');
+  expect(out).toContain('  Start here: review and commit 24 uncommitted files.\n');
+});
+
+test('the "What you did" line wraps instead of being cut', () => {
+  const out = render([
+    entry({
+      workingOn: `working on vecstore (an original, Apache-2.0 local workspace for humans and coding agents with many parts)`,
+      nextStep: 'Make the real tests pass',
+    }),
+  ]);
+  expect(out).not.toMatch(/…/);
+  expect(out.replace(/\s+/g, ' ')).toContain('coding agents with many parts).');
 });

@@ -1,0 +1,14 @@
+vecstore · last worked 14h ago · about 1.5 hours · branch fix/issue-15-store-error-mapping
+  What you did
+    You were fixing issue #15: store error mapping. You added a new module (shared error translation
+    for blob store calls), 2 new exception types and 9 tests. Codex said the work was done.
+  Files you changed
+    • _store_errors.py — new: shared error translation for blob store calls
+    • exceptions.py — added 2 new exceptions (access denied, throttled)
+    • blob.py, async_blob.py — now use the new translate_errors
+    • test_store_errors.py — new: 9 tests for store errors
+  What's left
+    • CI fails: pytest can't load test_kernel.py
+    • 3 files need formatting
+    Start here: fix the test-loading error in test_kernel.py, format the 3 files, then run
+    `make run-ci` again.

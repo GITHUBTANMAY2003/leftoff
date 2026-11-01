@@ -1145,6 +1145,16 @@ As built; see `docs/reports/task-15e.md`.
 
 ---
 
+### Task 15f: Three sections, no LLM (owner decision during Task 17)
+
+As built; see `docs/reports/task-15f.md`. leftoff's main experience spends no tokens: polish stays optional and off by default, and nothing new is built on it.
+- `leftoff resume` (and `--details`, the same sections, fuller) has exactly three sections under the header: **What you did** (the goal from the branch, commits or first substantive request; what was built, from the diff — new modules, new exception types and classes, tests added; the agent's claim), **Files you changed** (one line per file, most important first, 4/6/8 by work size and 8 in `--details`, then "+N more files"; `<name> — new: <its own docstring>`, "added 2 new exceptions (…)", "now uses the new <symbol>", "N tests for <topic>"), **What's left** (merged problems, uncommitted files, the agent's unanswered question, notes, then one `Start here:` line). `--details` adds, per problem, the error line, each distinct command once (`ruff format --check (6 files)`) and what was already tried.
+- The diff is the work window's: from just before its first commit to the working tree, limited to its commits' files and the uncommitted ones; untracked files included; lockfiles left out. Definitions come from one pattern table per language (`src/brief/changes.ts`: Python, JS/TS, Go, Rust, Java/Kotlin/C#, C/C++, shell); a new file is described by its own docstring or header comment, read to the end of its first sentence.
+- `leftoff` (all projects): per project the header, the goal line and `Start here:`.
+- Correctness: a run whose output shows failed tests counts as failed however the chain ends; README sentences are whole; folder lists show 3, then "(+N more folders)"; the git collector's one-time re-read covers the retention window (it read only 7 days, which lost older commits).
+
+---
+
 ### Task 16: End-to-end and performance tests
 
 **Files:**

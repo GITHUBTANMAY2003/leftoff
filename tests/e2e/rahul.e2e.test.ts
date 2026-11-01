@@ -19,10 +19,10 @@ beforeEach(() => {
 });
 afterEach(async () => cleanup());
 
-test('rahul scenario end to end: `leftoff resume` matches the golden brief', () => {
+test('rahul scenario end to end: `leftoff resume` matches the golden three sections', () => {
   const r = run(['resume'], { cwd: s.repo, env: s.env });
   expect([r.status, r.stderr]).toEqual([0, '']);
-  expect(r.stdout).toBe(golden('rahul-brief.txt'));
+  expect(r.stdout).toBe(golden('rahul-resume.txt')); // the three sections (after 15e)
 });
 
 test('hook claude-session-start returns the same brief as context for the agent', () => {
@@ -76,7 +76,7 @@ test('bare `leftoff` lists the project with its open problem and uncommitted fil
       '',
       'myapp (feature/forgot-password) · last worked 14h ago · 1 problem open · 1 uncommitted file',
       '  You were building forgot password: Added reset-token migration.',
-      '  Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
+      '  Start here: fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
       '',
       'Run `leftoff resume` inside a project for details',
     ].join('\n'),

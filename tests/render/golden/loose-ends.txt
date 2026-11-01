@@ -3,9 +3,9 @@ Loose ends across 2 projects
 myapp · last worked 14h ago · Claude said done · 2 problems open · 1 uncommitted file
   on branch feature/forgot-password
   You were building forgot password.
-  Next: Make the reset tests pass (`pytest tests/test_reset.py`).
+  Start here: make the reset tests pass (`pytest tests/test_reset.py`).
 api-server (main) · last worked 4d ago · 3 uncommitted files · stale
   You were working on: Add rate limits to the public API.
-  Next: Review and commit 3 uncommitted files (a.ts, b.ts, c.ts).
+  Start here: review and commit 3 uncommitted files (a.ts, b.ts, c.ts).
 
 Run `leftoff resume` inside a project for details

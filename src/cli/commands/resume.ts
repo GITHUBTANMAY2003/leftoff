@@ -1,5 +1,7 @@
 import { readWorkingState } from '../../collectors/git.ts';
-import { buildFacts } from '../../brief/facts.ts';
+import { readWorkChanges } from '../../brief/changes.ts';
+import { buildFacts, type BriefFacts } from '../../brief/facts.ts';
+import { describeChanges } from '../../brief/story.ts';
 import { factsHash } from '../../brief/hash.ts';
 import { loadConfig } from '../../core/config.ts';
 import { logError } from '../../core/logger.ts';
@@ -9,8 +11,7 @@ import { polishNow } from '../../polish/summarize.ts';
 import type { PolishProvider } from '../../polish/types.ts';
 import { renderJson } from '../../render/json.ts';
 import { renderMarkdown } from '../../render/markdown.ts';
-import { renderBrief } from '../../render/narrative.ts';
-import { renderDetails } from '../../render/details.ts';
+import { renderStory, type Story } from '../../render/story.ts';
 import { openDb } from '../../store/db.ts';
 import { createRepo } from '../../store/repo.ts';
 
@@ -18,6 +19,16 @@ const INGEST_BUDGET_MS = 1200;
 const LOCAL_MODEL = 'Generating summary with a local model, this can take a minute…';
 const POLISH_OFF =
   'Polish is off. Turn it on with `leftoff setup` or `leftoff config set polish.provider <claude-cli|ollama|…>`.';
+
+// What changed in the work window, from git: the diff from just before its
+// first commit, limited to its commits' files and the uncommitted ones.
+function storyOf(root: string, f: BriefFacts): Story {
+  const files =
+    f.work.commitFiles === null
+      ? null
+      : [...new Set([...f.work.commitFiles, ...f.unfinished.files.map((file) => file.path)])];
+  return describeChanges(readWorkChanges(root, f.work.hashes[0] ?? null, files));
+}
 
 export interface ResumeOptions {
   cwd: string;
@@ -85,9 +96,12 @@ export async function runResume(
         ? renderJson(facts, polished)
         : opts.format === 'md'
           ? renderMarkdown(facts, polished, { now })
-          : opts.format === 'details'
-            ? renderDetails(facts, polished, { color, now })
-            : renderBrief(facts, polished, { color, now });
+          : renderStory(facts, storyOf(root, facts), {
+              color,
+              now,
+              polished,
+              details: opts.format === 'details',
+            });
     if (facts.lastActiveAt) repo.markBriefShown(root, facts.lastActiveAt);
     return { output, exitCode: 0, ...(polishOff ? { stderr: POLISH_OFF } : {}) };
   } finally {

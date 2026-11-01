@@ -56,8 +56,8 @@ test('formatting failures merge and count their files', () => {
 test('known error texts are put in words; the raw line stays on the problem', () => {
   const [g] = groupProblems([p('make run-ci', 'ERROR collecting tests/test_kernel.py')]);
   expect(g).toMatchObject({
-    now: "The project checks fail: pytest can't load tests/test_kernel.py",
-    action: 'fix the test-loading error in tests/test_kernel.py',
+    now: "CI fails: pytest can't load test_kernel.py",
+    action: 'fix the test-loading error in test_kernel.py',
     rerun: 'make run-ci',
   });
   expect(g?.problems[0]?.error).toBe('ERROR collecting tests/test_kernel.py');

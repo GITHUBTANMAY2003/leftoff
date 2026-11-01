@@ -100,7 +100,7 @@ describe('Python, medium: one afternoon, one commit', () => {
   test('medium, with the descriptive branch in words', () => {
     expect(w.size).toBe('medium');
     expect(w.activeMinutes).toBe(100);
-    expect(w.workingOn).toBe('fixing retry timeouts (issue 42): Retry on timeouts');
+    expect(w.workingOn).toBe('fixing issue #42: retry timeouts');
     expect(w.topFolders).toEqual([
       { path: 'src/svc', files: 6 },
       { path: 'tests', files: 3 },
@@ -160,8 +160,8 @@ test('commit file lists count as changed files; files outside the project do not
 test.each([
   ['feature/forgot-password', 'building forgot password'],
   ['feat/user-onboarding-flow', 'building user onboarding flow'],
-  ['fix/issue-15-s3vectors-error-mapping', 'fixing s3vectors error mapping (issue 15)'],
-  ['bugfix/PROJ-123-null-cart-total', 'fixing null cart total (PROJ-123)'],
+  ['fix/issue-15-s3vectors-error-mapping', 'fixing issue #15: s3vectors error mapping'],
+  ['bugfix/PROJ-123-null-cart-total', 'fixing PROJ-123: null cart total'],
   ['refactor/auth-middleware', 'refactoring auth middleware'],
   ['docs/install-guide', 'writing docs: install guide'],
   ['dark-mode-toggle', 'working on dark mode toggle'],
@@ -332,4 +332,30 @@ test('no commits: the README says what the project is, then where most changes w
   expect(summarizeWork(withCommit, { root, branch: 'main', gapMinutes: 45, about }).workingOn).toBe(
     'working on: Add sync settings page',
   );
+});
+
+test("the work summary keeps the commits' hashes and files (for the diff) and how many folders changed", () => {
+  const root = '/w/app';
+  const events = [
+    ev(root, '2026-10-20T10:00:00.000Z', 'commit', 'one', { hash: 'aaa', files: ['src/a/x.py'] }),
+    ev(root, '2026-10-20T10:05:00.000Z', 'commit', 'two', {
+      hash: 'bbb',
+      files: ['docs/y.md', 'src/a/x.py'],
+    }),
+    edit(root, '2026-10-20T10:06:00.000Z', 'web/z.css'),
+    edit(root, '2026-10-20T10:07:00.000Z', 'infra/w.yml'),
+  ];
+  const w = summarizeWork(events, { root, branch: null, gapMinutes: 45 });
+  expect(w.hashes).toEqual(['aaa', 'bbb']);
+  expect(w.commitFiles).toEqual(['docs/y.md', 'src/a/x.py']);
+  expect(w.folderCount).toBe(4);
+  const noFiles = summarizeWork(
+    [ev(root, '2026-10-20T10:00:00.000Z', 'commit', 'one', { hash: 'aaa' })],
+    {
+      root,
+      branch: null,
+      gapMinutes: 45,
+    },
+  );
+  expect(noFiles.commitFiles).toBeNull(); // a commit stored without its files: the diff isn't limited
 });

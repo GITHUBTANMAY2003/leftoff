@@ -1,0 +1,10 @@
+myapp · last worked 14h ago · about 1.5 hours · branch feature/forgot-password
+  What you did
+    You were building forgot password: Added reset-token migration. You changed 2 files.
+  Files you changed
+    • email_service.py — new
+    • migration.sql — new
+  What's left
+    • `python scripts/send_test_email.py` — SMTP connection refused
+    • 1 uncommitted file
+    Start here: fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.

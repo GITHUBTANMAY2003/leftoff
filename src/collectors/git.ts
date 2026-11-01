@@ -106,7 +106,9 @@ interface GitCursor {
 // with "+" (GitHub noreply addresses) matched none of your commits. A cursor
 // saved before the fix reads its repo again like a first run; dedupe keys
 // absorb the repeats.
-const AUTHOR_MATCH = 2;
+// 3: re-read once more with the retention window (Task 15f: a re-read that
+// looked back only 7 days missed older commits) and the commits' file lists.
+const AUTHOR_MATCH = 3;
 
 function readCursor(value: string | null): GitCursor {
   try {
@@ -145,6 +147,7 @@ async function readCommits(
   cursor: string | null,
   email: string | null,
   ctx: CollectContext,
+  reread = false, // a cursor from an older format: read the whole retention window
 ): Promise<{ events: WorkEvent[]; head: string | null }> {
   let head: string;
   try {
@@ -166,7 +169,7 @@ async function readCommits(
     'log',
     format,
     ...filters,
-    `--since=${iso(ctx.now.getTime() - FIRST_RUN_DAYS * DAY_MS)}`,
+    `--since=${iso(ctx.now.getTime() - (reread ? ctx.config.retentionDays : FIRST_RUN_DAYS) * DAY_MS)}`,
     'HEAD',
   ];
   let out: string;
@@ -311,8 +314,9 @@ export const gitCollector: Collector = {
           );
           ctx.repo.setCursor('git-email', root, 'logged');
         }
-        const from = cursor.authorMatch === AUTHOR_MATCH ? cursor.commit : null;
-        const commits = await readCommits(root, from, email, ctx);
+        const reread = cursor.commit !== null && cursor.authorMatch !== AUTHOR_MATCH;
+        const from = reread ? null : cursor.commit;
+        const commits = await readCommits(root, from, email, ctx, reread);
         const switches = await readSwitches(root, cursor, ctx);
         result.events.push(...commits.events, ...switches.events);
         const next: GitCursor = {
