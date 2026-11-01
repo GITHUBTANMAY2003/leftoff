@@ -74,9 +74,9 @@ test('bare `leftoff` lists the project with its open problem and uncommitted fil
     [
       'Loose ends across 1 project',
       '',
-      'myapp (feature/forgot-password) · last worked 14h ago',
+      'myapp (feature/forgot-password) · last worked 14h ago · 1 problem open · 1 uncommitted file',
       '  You were building forgot password: Added reset-token migration.',
-      '  Next: Get `python scripts/send_test_email.py` working (also: 1 uncommitted file)',
+      '  Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
       '',
       'Run `leftoff resume` inside a project for details',
     ].join('\n'),

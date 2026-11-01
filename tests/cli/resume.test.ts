@@ -92,10 +92,10 @@ test('resume --details: the same plain words, each problem as a numbered block',
   const r = await runResume({ cwd: project, format: 'details', polish: false });
   expect(r.output).toMatch(/^myapp · last worked /);
   expect(r.output).toContain(
-    '  1. `python scripts/send_test_email.py` — SMTP connection refused\n     Command: python scripts/send_test_email.py\n     Files: scripts/send_test_email.py\n     Already tried: ',
+    '  1. `python scripts/send_test_email.py` — SMTP connection refused\n     Error output: SMTP connection refused\n     Command: python scripts/send_test_email.py\n     Files: scripts/send_test_email.py\n     Already tried: ',
   );
   expect(r.output).toContain(
-    '  Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
+    '  Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
   );
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
@@ -121,7 +121,7 @@ test('resume ingests first: a failing command in the shell log shows up in the s
     [Date.now(), 2, 15, 42, project, 'make deploy'].join('\t') + '\n',
   );
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
-  expect(r.output).toContain('  Next: Get `make deploy` working (exit code 2).'); // small work
+  expect(r.output).toContain('  Next: Get `make deploy` working.'); // small work
   // git ran fine (installed; this folder just isn't a repo); no agent logs exist here.
   const json = JSON.parse(
     (await runResume({ cwd: project, format: 'json', polish: false })).output,

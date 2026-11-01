@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { BriefFacts, ClaimedDone, OpenProblem } from '../../src/brief/facts.ts';
-import { chooseNextStep } from '../../src/brief/next-step.ts';
+import { chooseNextStep, plainNextStep } from '../../src/brief/next-step.ts';
 import { summarizeWork } from '../../src/brief/work.ts';
 
 function facts(partial: Partial<Omit<BriefFacts, 'nextStep'>>): Omit<BriefFacts, 'nextStep'> {
@@ -112,4 +112,33 @@ test('an open problem from a command is resolved with the command first', () => 
   expect(
     chooseNextStep(facts({ openProblems: [op('Missing script: "lint"', 'npm run lint')] })),
   ).toBe('Resolve: `npm run lint` — Missing script: "lint"');
+});
+
+// ---- concrete next steps covering the top problems (after 15d) ----
+
+const prob = (command: string, error: string, isTest = false): OpenProblem => ({
+  error,
+  command,
+  isTest,
+  source: 'codex',
+  firstSeen: '2026-10-20T10:00:00.000Z',
+  attempts: [],
+});
+
+test('the next step covers the top problems, then says what to run again', () => {
+  const f = {
+    ...facts({}),
+    openProblems: [
+      prob('make run-ci', 'ERROR collecting tests/test_kernel.py'),
+      prob('uv run ruff format --check src/a.py src/b.py tests/t.py', 'Would reformat: src/a.py'),
+    ],
+  };
+  expect(plainNextStep(f)).toBe(
+    'Fix the test-loading error in tests/test_kernel.py, format the 3 files, then run `make run-ci` again',
+  );
+});
+
+test('one problem: its action, then the command to run again', () => {
+  const f = { ...facts({}), openProblems: [prob('cargo test -p core', 'failed', true)] };
+  expect(plainNextStep(f)).toBe('Make the core tests pass, then run `cargo test -p core` again');
 });

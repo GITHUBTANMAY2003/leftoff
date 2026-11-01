@@ -1134,6 +1134,17 @@ As built; see `docs/reports/task-15d.md`.
 
 ---
 
+### Task 15e: One count, words for errors, concrete next steps (owner request during Task 17)
+
+As built; see `docs/reports/task-15e.md`.
+- A whole-project check inside a successful `&&`/`;` chain counts as passed (`npx prettier …; npm run check | grep …`); `ci` scripts and `make ci`/`run-ci` are check suites.
+- One grouping (`src/brief/groups.ts`) for every view: a project's test failures are one group ("Tests fail in 2 packages: a and b"; a whole-suite run isn't named when packages explain it); formatting failures are one group ("3 files need formatting"); the rest group by how they read. Loose ends, the brief and `--details` count the same groups.
+- Tool jargon in errors is put in words ("ERROR collecting x" → "pytest can't load x"); plain-English errors stay; the raw line is in `--details` under "Error output:".
+- The next step covers the top three groups' actions, then the command to run again ("Fix the test-loading error in tests/x.py, format the 3 files, then run `make run-ci` again"); a named test script names its suite ("the real tests").
+- Headers are never cut: too long, they drop the time estimate, then put the branch on its own line. The next step and claim lines wrap; `--details` wraps every line and says "Nothing tried yet." when nothing was; attempts name the file's path.
+
+---
+
 ### Task 16: End-to-end and performance tests
 
 **Files:**

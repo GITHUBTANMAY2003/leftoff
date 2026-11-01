@@ -1153,3 +1153,29 @@ test('a real command after the work does move "last worked"', () => {
     '2026-10-20T18:40:00.000Z',
   );
 });
+
+// ---- dogfooding after 15d: whole-suite runs inside chains, and ci scripts ----
+
+test('a whole-project check inside a successful chain resolves earlier test failures', () => {
+  const events = timeline(
+    fail('npx vitest run --project unit tests/render', '2 failed'),
+    ok(
+      'npx prettier --write src tests >/dev/null; npm run check 2>&1 | grep -E "Tests " | head -3; npm run build',
+    ),
+  );
+  expect(findOpenProblems(events)).toEqual([]);
+});
+
+test.each([
+  'npm run ci',
+  'pnpm run test',
+  'yarn test',
+  'make test',
+  'make check',
+  'make ci',
+  'make run-ci',
+])('%s counts as a whole-suite run', (command) => {
+  expect(
+    findOpenProblems(timeline(fail('npx jest src/a.test.js', '1 failed'), ok(command))),
+  ).toEqual([]);
+});

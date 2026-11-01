@@ -68,31 +68,44 @@ test('the sized header, what you were doing, how many things are not right', () 
   );
 });
 
-test('each open problem is a numbered block: words, error, command, files, attempts in words', () => {
+test('each problem group is a numbered block: words, error output, command, files, attempts naming files', () => {
   const out = render(sample()).join('\n');
   expect(out).toContain(
     [
-      '  1. `make run-ci` fails',
-      '     Error: ERROR collecting tests/test_kernel.py',
+      "  1. The project checks fail: pytest can't load tests/test_kernel.py",
+      '     Error output: ERROR collecting tests/test_kernel.py',
       '     Command: make run-ci',
-      '     Already tried: reading test_store.py, checking the diff',
+      '     Already tried: reading tests/test_store.py, checking the diff',
     ].join('\n'),
   );
   expect(out).toContain(
     [
-      '  2. Ruff finds unformatted files',
-      '     Error: Would reformat: tests/test_errors.py',
+      '  2. 2 files need formatting',
+      '     Error output: Would reformat: tests/test_errors.py',
       '     Command: uv run ruff format --check tests/test_errors.py src/app/stores/s3.py',
       '     Files: src/app/stores/s3.py, tests/test_errors.py',
-      '     Already tried: editing exceptions.py, running the errors tests',
+      '     Already tried: editing src/app/exceptions.py, running the errors tests',
     ].join('\n'),
   );
+});
+
+test('long lines wrap instead of being cut; nothing tried says so', () => {
+  const long = problem(
+    `uv run ruff format --check ${['src/app/one.py', 'src/app/two.py', 'src/app/three.py', 'src/app/four.py', 'src/app/five.py', 'src/app/six.py'].join(' ')}`,
+    'Would reformat: src/app/one.py',
+  );
+  const out = render({ ...sample(), claimedDone: null, openProblems: [long] });
+  for (const l of out) expect([...l].length).toBeLessThanOrEqual(100);
+  expect(out.join('\n')).not.toMatch(/…$/m);
+  const at = out.findIndex((l) => l.startsWith('     Command: '));
+  expect(out[at + 1]).toMatch(/^ {7}\S/); // the rest of the command, on the next line
+  expect(out).toContain('     Nothing tried yet.');
 });
 
 test('then what changed and the next step; no raw sections or sources line', () => {
   const out = render(sample());
   expect(out).toContain('  What changed: 6 files, most in src/app and tests');
-  expect(out.at(-1)).toMatch(/^ {2}Next: /);
+  expect(out.some((l) => /^ {2}Next: /.test(l))).toBe(true); // it may wrap
   expect(out.join('\n')).not.toMatch(/Sources:|^Open problems$|^ {4}tried:/m);
 });
 
@@ -114,14 +127,14 @@ test('no problems: says nothing is failing; uncommitted files are listed', () =>
   expect(out).toContain('  Uncommitted: a.py (modified), b.py (untracked)');
 });
 
-test('a problem whose words already include the error has no separate Error line', () => {
+test('the raw error line is kept under Error output, even when the words translate it', () => {
   const out = render({
     ...sample(),
     claimedDone: null,
     openProblems: [problem('./deploy.sh', 'connection refused')],
   });
   expect(out).toContain('  1. `./deploy.sh` — connection refused');
-  expect(out.some((l) => l.includes('Error:'))).toBe(false);
+  expect(out).toContain('     Error output: connection refused');
 });
 
 // ---- from the owner's real output ----
@@ -137,8 +150,8 @@ test('attempts that only looked around, or were scratch, are not listed; a bare 
     'cargo test -p core -- parse',
   ]);
   const out = render({ ...sample(), claimedDone: null, openProblems: [p] }).join('\n');
-  expect(out).toContain('     Already tried: editing core.rs, running the core tests');
-  expect(out).not.toContain('Error: failed');
+  expect(out).toContain('     Already tried: editing src/core.rs, running the core tests');
+  expect(out).not.toContain('Error output: failed');
 });
 
 test('problems that read the same are one block, with every command and file', () => {
@@ -152,11 +165,11 @@ test('problems that read the same are one block, with every command and file', (
   expect(out).toContain('  1 thing is still not right:');
   expect(out.join('\n')).toContain(
     [
-      '  1. Ruff finds unformatted files',
-      '     Error: Would reformat: src/a.py',
+      '  1. 3 files need formatting',
+      '     Error output: Would reformat: src/a.py',
       '     Commands: uv run ruff format --check src/a.py; uv run ruff format --check src/b.py tests/t.py',
       '     Files: src/a.py, src/b.py, tests/t.py',
-      '     Already tried: editing a.py, editing b.py',
+      '     Already tried: editing src/a.py, editing src/b.py',
     ].join('\n'),
   );
 });

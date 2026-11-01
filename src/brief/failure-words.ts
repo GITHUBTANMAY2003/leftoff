@@ -16,6 +16,7 @@ export interface FailureWords {
   now: string; // "the billing tests are failing"
   still: string; // "the billing tests are still failing"
   fix: string; // "Make the billing tests pass (`pytest tests/test_billing.py`)"
+  action: string; // "make the billing tests pass" — joined into the next step
 }
 
 // Matched against the program words (setup steps, runners and trailing filters
@@ -65,12 +66,12 @@ const TOOLS: { pattern: RegExp; category: FailureCategory; label: string | null 
 
 // Package-manager scripts (`npm run lint`, `pnpm test:e2e`) by script name.
 const SCRIPTS: { pattern: RegExp; category: FailureCategory }[] = [
-  { pattern: /^(test|t)$|^test:|:test$/, category: 'test' },
+  { pattern: /^(test|t)$|^test[:_-]|[:_-]test$/, category: 'test' },
   { pattern: /^(format|fmt):check$|^(format|fmt)-check$/, category: 'format' },
   { pattern: /^lint$|^lint:/, category: 'lint' },
   { pattern: /^(typecheck|type-check|types|tsc)$/, category: 'typecheck' },
   { pattern: /^build$|^build:/, category: 'build' },
-  { pattern: /^check$|^check:/, category: 'check' },
+  { pattern: /^check$|^check:|^ci$|^ci:/, category: 'check' },
 ];
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 // Their own subcommands, which are never scripts (`pnpm install`).
@@ -81,6 +82,8 @@ const MAKE_TARGETS: Record<string, FailureCategory> = {
   lint: 'lint',
   check: 'check',
   build: 'build',
+  ci: 'check', // the whole CI suite (owner decision after Task 15d)
+  'run-ci': 'check',
 };
 
 // Errors that say what is missing, whatever the tool (checked first).
@@ -176,6 +179,13 @@ function testSubject(command: string, label: string | null): string {
     scope = names.length > 2 ? `${names[0]}, ${names[1]} and other` : names.join(' and ');
   }
   if (scope !== '') return `the ${scope} tests`;
+  // a named test script names its suite: `pnpm test:real` → "the real tests"
+  const [program = '', first = '', second = ''] = words;
+  if (PACKAGE_MANAGERS.has(program)) {
+    const script = first === 'run' ? second : first;
+    const suite = /^test[:_-](.+)$/.exec(script)?.[1] ?? /^(.+)[:_-]test$/.exec(script)?.[1];
+    if (suite) return `the ${suite} tests`;
+  }
   return label ? `the ${label} tests` : 'the tests';
 }
 
@@ -186,12 +196,124 @@ const EXIT_CODES: Record<string, { now: string; fix: string }> = {
   '126': { now: 'could not run (exit code 126, not executable)', fix: 'Check' },
 };
 
+// Error texts in words (owner decision after Task 15d): tool jargon only —
+// an error that is already plain English ("SMTP connection refused") stays as
+// it is. The raw line is shown by `resume --details`, under "Error output:".
+const ERROR_WORDS: {
+  pattern: RegExp;
+  text: (m: RegExpExecArray) => string;
+  action?: (m: RegExpExecArray) => string;
+}[] = [
+  {
+    pattern: /ERROR collecting (\S+)/,
+    text: (m) => `pytest can't load ${m[1]}`,
+    action: (m) => `fix the test-loading error in ${m[1]}`,
+  },
+  {
+    pattern: /(\d+) files? would be reformatted/,
+    text: (m) => `${m[1]} ${m[1] === '1' ? 'file needs' : 'files need'} formatting`,
+  },
+  { pattern: /Would reformat: (\S+)/, text: (m) => `${m[1]} needs formatting` },
+  { pattern: /File would be reformatted/, text: () => 'a file needs formatting' },
+  { pattern: /Cannot find module '([^']+)'/, text: (m) => `the module ${m[1]} can't be found` },
+  {
+    pattern: /ModuleNotFoundError: No module named '([^']+)'/,
+    text: (m) => `the Python module ${m[1]} is not installed`,
+  },
+  { pattern: /SyntaxError: (.+)/, text: (m) => `a syntax error: ${m[1]}` },
+  { pattern: /address already in use/i, text: () => 'the port is already in use' },
+];
+export function errorWords(error: string): { text: string; action: string | null } | null {
+  for (const row of ERROR_WORDS) {
+    const m = row.pattern.exec(error);
+    if (m) return { text: row.text(m), action: row.action ? row.action(m) : null };
+  }
+  return null;
+}
+
+// The step of a chain that is the check (`cargo fmt …; cargo test --workspace`
+// → `cargo test --workspace`), else the command itself.
+export function checkStep(command: string): string {
+  const steps = chainSteps(displayCommand(command));
+  const check = [...steps].reverse().find((step) => classify(step) !== null);
+  return check !== undefined ? displayCommand(check) : displayCommand(command);
+}
+
+// The package or test files a test run is limited to (`-p billing` → package
+// billing; `tests/test_reset.py` → files "reset"), or null for the whole suite.
+export function testScope(command: string): { name: string; kind: 'package' | 'files' } | null {
+  const words = wordsOf(command);
+  const flag = words.findIndex((w) => w === '-p' || w === '--package' || w === '-pl');
+  const pkg = flag >= 0 ? (words[flag + 1] ?? '') : '';
+  if (pkg !== '') return { name: pkg, kind: 'package' };
+  const subject = testSubject(command, null);
+  return subject === 'the tests'
+    ? null
+    : { name: subject.replace(/^the | tests$/g, ''), kind: 'files' };
+}
+
+const lowerFirst = (text: string) =>
+  /^[A-Z][a-z]/.test(text) ? text[0]?.toLowerCase() + text.slice(1) : text;
+
 export function describeFailure(command: string | null, error: string): FailureWords {
+  const base = describeBase(command, error);
+  const shown = command === null ? null : displayCommand(command);
+  const ew = errorWords(error);
+  // Raw error text in a phrase becomes words when it is a known one.
+  let { now, still } = base;
+  if (ew && (base.category === 'check' || base.category === 'make')) {
+    now = `${now}: ${ew.text}`;
+    still = `${still}: ${ew.text}`;
+  } else if (ew && base.category === null && shown !== null && now.startsWith(`\`${shown}\` — `)) {
+    now = `\`${shown}\` fails: ${ew.text}`;
+    still = `\`${shown}\` still fails: ${ew.text}`;
+  }
+  return { ...base, now, still, action: actionOf(base, shown, ew, error) };
+}
+
+// An error quoted in a next step is a reference: about 60 characters, cut at a word.
+const MAX_QUOTED_ERROR = 60;
+function quoteError(error: string): string {
+  const chars = [...error];
+  if (chars.length <= MAX_QUOTED_ERROR) return error;
+  const cut = chars.slice(0, MAX_QUOTED_ERROR - 1).join('');
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 1))}…`;
+}
+
+function actionOf(
+  base: Omit<FailureWords, 'action'>,
+  shown: string | null,
+  ew: { action: string | null } | null,
+  error: string,
+): string {
+  if (ew?.action) return ew.action;
+  switch (base.category) {
+    case 'test':
+    case 'lint':
+    case 'format':
+    case 'typecheck':
+    case 'build':
+    case 'check':
+    case 'docker':
+    case 'missing':
+      // the fix without its command in brackets, or the "or stop calling it":
+      // "make the reset tests pass", "add a "lint" script to package.json"
+      return lowerFirst(base.fix.replace(/ \(`[^`]*`\)$/, '').replace(/, or stop calling it$/, ''));
+    default:
+      if (/^Find out why/.test(base.fix)) return lowerFirst(base.fix);
+      if (shown === null) return lowerFirst(base.fix.replace(/^Fix: /, 'fix: '));
+      // name the error when it says something: `fix "SMTP connection refused"`
+      if (/^(failed|exit code \d+)$/.test(error)) return `get \`${shown}\` working`;
+      return `fix "${quoteError(error)}"`;
+  }
+}
+
+function describeBase(command: string | null, error: string): Omit<FailureWords, 'action'> {
   // A chain of checks (`cargo fmt …; cargo test …`) reads as its last check.
   if (command !== null) {
     const steps = chainSteps(displayCommand(command));
     const check = [...steps].reverse().find((step) => classify(step) !== null);
-    if (steps.length > 1 && check !== undefined) return describeFailure(check, error);
+    if (steps.length > 1 && check !== undefined) return describeBase(check, error);
   }
   const script = MISSING_SCRIPT.exec(error)?.[1];
   if (script !== undefined) {
@@ -335,7 +457,7 @@ const MAX_ATTEMPT_CHARS = 50;
 export function attemptWords(attempt: string): string {
   const edit = /^(\w+) (.+)$/.exec(attempt);
   if (edit && EDIT_VERBS[edit[1] as string]) {
-    return `${EDIT_VERBS[edit[1] as string]} ${basename(edit[2] as string)}`;
+    return `${EDIT_VERBS[edit[1] as string]} ${edit[2] as string}`; // the path, so it can be found
   }
   if (/<</.test(attempt) || attempt.endsWith(' …')) return 'running a script';
   const shown = displayCommand(attempt);
@@ -360,7 +482,7 @@ export function attemptWords(attempt: string): string {
   }
   const [program = '', sub = ''] = wordsOf(shown);
   if (READERS.has(program) || (program === 'sed' && sub === '-n')) {
-    const files = commandFiles(shown).map((f) => basename(f));
+    const files = commandFiles(shown);
     return files.length > 0 ? `reading ${files.join(', ')}` : 'reading files';
   }
   if (SEARCHERS.has(program)) return 'searching the code';

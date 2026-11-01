@@ -35,3 +35,33 @@ export function clipMiddle(text: string, max: number): string {
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// Wraps text to `width` at spaces (never inside a `command`), never cutting it (owner decision after Task
+// 15d). Continuation lines are indented two more spaces than `prefix`.
+export function wrap(prefix: string, text: string, width: number): string[] {
+  const room = width - [...prefix].length;
+  const lines: string[] = [];
+  let current = '';
+  // a `command` in backticks is one word, so a line doesn't break inside it —
+  // unless it is longer than a whole line, then it breaks at its spaces
+  const max = room - 2;
+  const words = (text.match(/[^\s`]*`[^`]*`\S*|\S+/g) ?? [])
+    .flatMap((w) => ([...w].length > max ? w.split(' ') : [w]))
+    // a single word longer than a line (a long path) continues on the next
+    .flatMap((w) => {
+      const chars = [...w];
+      if (chars.length <= max) return [w];
+      const parts: string[] = [];
+      for (let i = 0; i < chars.length; i += max) parts.push(chars.slice(i, i + max).join(''));
+      return parts;
+    });
+  for (const word of words) {
+    const next = current === '' ? word : `${current} ${word}`;
+    if ([...next].length > room - (lines.length > 0 ? 2 : 0) && current !== '') {
+      lines.push(current);
+      current = word;
+    } else current = next;
+  }
+  if (current !== '') lines.push(current);
+  return lines.map((l, i) => `${prefix}${i > 0 ? '  ' : ''}${l}`);
+}

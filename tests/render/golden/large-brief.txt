@@ -11,6 +11,7 @@ parser · last worked 14h ago · about 12.5 hours over 2 days · branch feat/m2
     • Clippy reports lint errors
     • `./scripts/bench.sh` — connection refused (and 1 more problem)
     • 2 uncommitted files
-  Next: Make the parser tests pass (`cargo test -p parser`).
+  Next: Make the parser tests pass, fix the Clippy errors, fix "connection refused", then run
+    `cargo test -p parser` again.
 
 Exact commands, errors and attempts: `leftoff resume --details`

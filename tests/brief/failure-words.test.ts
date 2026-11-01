@@ -27,7 +27,7 @@ describe('describeFailure: test runners', () => {
     ['gradle', './gradlew test', 'the Gradle tests'],
     ['maven', 'mvn test', 'the Maven tests'],
     ['npm test', 'npm test', 'the tests'],
-    ['package script', 'pnpm test:e2e', 'the tests'],
+    ['package script', 'pnpm test:e2e', 'the e2e tests'],
     ['make test', 'make test', 'the tests'],
   ])('%s', (_name, command, subject) => {
     const words = describeFailure(command, '2 failed, 10 passed');
@@ -176,8 +176,10 @@ describe('describeFailure: fallback', () => {
       'connection refused',
     );
     expect(words.category).toBeNull();
+    // a plain-English error stays as it is (only tool jargon is translated)
     expect(words.now).toBe('`./deploy.sh --stage` — connection refused');
     expect(words.still).toBe('`./deploy.sh --stage` still fails — connection refused');
+    expect(words.action).toBe('fix "connection refused"');
     expect(words.fix).toBe('Get `./deploy.sh --stage` working (connection refused)');
   });
 
@@ -240,13 +242,13 @@ test.each([
 // ---- attempts in words (resume --details) ----
 
 test.each([
-  ['Edited src/app/exceptions.py', 'editing exceptions.py'],
-  ['Wrote docs/plan.md', 'writing plan.md'],
+  ['Edited src/app/exceptions.py', 'editing src/app/exceptions.py'],
+  ['Wrote docs/plan.md', 'writing docs/plan.md'],
   ['uv run pytest tests/test_errors.py', 'running the errors tests'],
   ['npx eslint src', 'running ESLint'],
   ['npm run build', 'building'],
-  ['cat tests/test_store.py', 'reading test_store.py'],
-  ["sed -n '1,40p' src/a.ts", 'reading a.ts'],
+  ['cat tests/test_store.py', 'reading tests/test_store.py'],
+  ["sed -n '1,40p' src/a.ts", 'reading src/a.ts'],
   ['rg -n "MapError" src', 'searching the code'],
   ['git diff --check', 'checking the diff'],
   ['git status --short', 'checking git'],
@@ -254,4 +256,11 @@ test.each([
   ['./deploy.sh --stage', '`./deploy.sh --stage`'],
 ])('attemptWords(%j) → %j', (attempt, words) => {
   expect(attemptWords(attempt)).toBe(words);
+});
+
+test('a test script with a name names its suite (after 15d)', () => {
+  expect(describeFailure('pnpm test:real', '1 failed').now).toBe('the real tests are failing');
+  expect(describeFailure('npm run test:e2e', '1 failed').now).toBe('the e2e tests are failing');
+  expect(describeFailure('yarn test-unit', '1 failed').now).toBe('the unit tests are failing');
+  expect(describeFailure('npm test', '1 failed').now).toBe('the tests are failing');
 });

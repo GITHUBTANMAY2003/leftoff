@@ -29,7 +29,7 @@ test('agent context starts and ends with exact lines and is ≤ 4000 chars even 
   expect(out).toMatch(/^- \+\d+ more$/m);
   expect(out).toContain('src/module-0/file-0.ts'); // shortened, not dropped
   expect(out).toContain(
-    'Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
+    'Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
   );
 });
 
@@ -40,7 +40,7 @@ test('the agent is told what was already tried, so it does not retry it (§1.1)'
   expect(out).toContain('feature/forgot-password');
   expect(out).toContain('email_service.py');
   expect(out).toContain(
-    'Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
+    'Next: Fix "SMTP connection refused", then run `python scripts/send_test_email.py` again.',
   );
 });
 

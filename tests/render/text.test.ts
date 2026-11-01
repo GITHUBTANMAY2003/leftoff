@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { clipMiddle } from '../../src/render/text.ts';
+import { clipMiddle, wrap } from '../../src/render/text.ts';
 
 test('clipMiddle keeps program + subcommand and the end of a long command', () => {
   const cmd =
@@ -35,4 +35,15 @@ test('clipMiddle falls back to a plain cut when less than 8 characters would be 
   const out = clipMiddle('cargo test -p payments_adapters --test openai_agents', 20); // head 10 → room 7
   expect(out).not.toContain(' … ');
   expect(out).toBe('cargo test -p…'); // clip() cuts at a word
+});
+
+test('wrap breaks at spaces, never inside a `command`, and never cuts', () => {
+  const text =
+    'Next: Make the parser tests pass, fix the Clippy errors, then run `cargo test -p parser` again.';
+  const lines = wrap('  ', text, 76); // the old wrap broke after `cargo
+  expect(lines).toEqual([
+    '  Next: Make the parser tests pass, fix the Clippy errors, then run',
+    '    `cargo test -p parser` again.',
+  ]);
+  expect(lines.join(' ').replace(/\s+/g, ' ').trim()).toBe(text);
 });

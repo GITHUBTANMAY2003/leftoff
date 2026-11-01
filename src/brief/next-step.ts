@@ -6,7 +6,10 @@ import {
   type BriefFacts,
   type OpenProblem,
 } from './facts.ts';
-import { describeFailure } from './failure-words.ts';
+import { groupProblems } from './groups.ts';
+
+// The next step covers at most this many problem groups (owner decision after 15d).
+const MAX_NEXT_GROUPS = 3;
 
 export const agentName = (source: Source): string =>
   ({ claude: 'Claude', codex: 'Codex' })[source as 'claude' | 'codex'] ?? 'The agent';
@@ -56,17 +59,27 @@ export function plainNextStep(f: Omit<BriefFacts, 'nextStep'>): string | null {
   if (f.lastAgent?.question) {
     return `Answer ${agentName(f.lastAgent.source)}'s question: ${f.lastAgent.question}`;
   }
+  const groups = groupProblems(f.openProblems);
+  if (groups.length > 0) {
+    // The claimed problem's group first, then the newest; at most three.
+    const claimed = claimedProblem(f);
+    const ordered = [
+      ...groups.filter((g) => claimed !== null && g.problems.includes(claimed)),
+      ...groups.filter((g) => claimed === null || !g.problems.includes(claimed)),
+    ].slice(0, MAX_NEXT_GROUPS);
+    const actions = ordered.map((g) => g.action).join(', ');
+    const rerun = ordered[0]?.rerun;
+    // "…, then run `x` again" unless the actions already name that command
+    const again = rerun && !actions.includes(`\`${rerun}\``) ? `, then run \`${rerun}\` again` : '';
+    return `${actions[0]?.toUpperCase()}${actions.slice(1)}${again}`;
+  }
   if (f.claimedDone) {
-    const problem = claimedProblem(f);
-    if (problem) return describeFailure(problem.command, problem.error).fix;
     const n = Number(UNCOMMITTED.exec(f.claimedDone.contradictions[0] ?? '')?.[1] ?? 0);
     if (n > 0) {
       const agent = agentName(f.claimedDone.source);
       return `Commit the ${files(n)} ${agent} said ${n === 1 ? 'was' : 'were'} committed`;
     }
   }
-  const top = f.openProblems[0];
-  if (top) return describeFailure(top.command, top.error).fix;
   const paths = f.unfinished.files.map((file) => file.path);
   if (paths.length > 0) {
     return `Review and commit ${paths.length} uncommitted ${paths.length === 1 ? 'file' : 'files'} (${shortList(paths)})`;

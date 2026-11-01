@@ -91,7 +91,7 @@ test('large work: sections for what got done and where it stopped (golden)', () 
   expect(out).toBe(golden('large-brief.txt'));
   const count = out.trimEnd().split('\n').length - 2; // without the details pointer
   expect(count).toBeGreaterThanOrEqual(8);
-  expect(count).toBeLessThanOrEqual(14); // ~8–12, plus the 3 commit lines (owner decision after 15c)
+  expect(count).toBeLessThanOrEqual(15); // ~8–12, plus 3 commit lines and a wrapped next step
 });
 
 test('small work: two or three lines', () => {
@@ -134,7 +134,7 @@ test('a done-claim is one sentence; it replaces the separate problem line', () =
   );
   expect(out).toContain('Also open: 1 more problem · 1 uncommitted file');
   expect(out.at(-1)).toBe(
-    'Next: Make the billing_adapters tests pass (`cargo test -p billing_adapters`).',
+    'Next: Make the billing_adapters tests pass, add a "lint" script to package.json, then run `cargo test -p billing_adapters` again.',
   );
 });
 
@@ -403,4 +403,45 @@ test('large: one or a few commits are listed one per line; a single commit stays
     expect.arrayContaining(['- 2 commits, the newest:', '  - second', '  - first']),
   );
   expect(large(['only one'])).toContain('- 1 commit: only one');
+});
+
+test('a header too long for one line drops the time estimate, then moves the branch; nothing is cut', () => {
+  const long = (name: string, branch: string) =>
+    renderBrief({ ...rahulFacts(), project: { root: `/w/${name}`, name }, branch }, null, {
+      color: false,
+      now: RAHUL_NOW,
+    }).split('\n');
+  const a = long('hackerrank-orchestrate-october26', 'feature/deletion-audit-agent-v2');
+  expect(a[0]).toBe(
+    'hackerrank-orchestrate-october26 · last worked 14h ago · branch feature/deletion-audit-agent-v2',
+  );
+  const b = long('hackerrank-orchestrate-october26', `feature/${'very-long-'.repeat(5)}name`);
+  expect(b.slice(0, 2)).toEqual([
+    'hackerrank-orchestrate-october26 · last worked 14h ago · about 1.5 hours',
+    `  on branch feature/${'very-long-'.repeat(5)}name`,
+  ]);
+  for (const l of [...a, ...b].slice(0, 2)) expect(l).not.toContain('…');
+});
+
+test('a claim line too long for the terminal wraps instead of being cut', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [
+      problem('make run-ci', 'ERROR collecting tests/test_semantic_kernel_and_more.py'),
+    ],
+    claimedDone: {
+      source: 'codex',
+      message: '…finished…',
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: [
+        '`make run-ci` — ERROR collecting tests/test_semantic_kernel_and_more.py (still failing)',
+      ],
+    },
+  };
+  const out = renderBrief(f, null, { color: false, now: RAHUL_NOW }).split('\n');
+  const at = out.findIndex((l) => l.includes('Codex said'));
+  expect(`${out[at]} ${out[at + 1]?.trim()}`).toBe(
+    "  Codex said it was done, but the project checks still fail: pytest can't load tests/test_semantic_kernel_and_more.py.",
+  );
+  for (const l of out) expect(l).not.toMatch(/…$/);
 });

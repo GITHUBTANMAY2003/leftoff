@@ -1,10 +1,10 @@
-import type { BriefFacts, OpenProblem } from '../brief/facts.ts';
-import { describeFailure } from '../brief/failure-words.ts';
+import type { BriefFacts } from '../brief/facts.ts';
+import { groupProblems, type ProblemGroup } from '../brief/groups.ts';
 import { agentName, claimedProblem, plainNextStep } from '../brief/next-step.ts';
 import { folderName, substantiveSentence } from '../brief/work.ts';
 import { relativeAgo } from '../core/time.ts';
 import { fit, fitKeepingTail, fitProblemLine, LINE_WIDTH, painter } from './terminal.ts';
-import { clip, plural } from './text.ts';
+import { clip, plural, wrap } from './text.ts';
 
 // The brief in plain words, as long as the work was big (owner requests after
 // Task 15b and Task 17): small work 2–3 lines, medium ~5–6, large ~8–12 in
@@ -19,8 +19,6 @@ const UNCOMMITTED = /^(\d+) uncommitted files?$/;
 const SHOWN_COMMITS_MEDIUM = 2;
 const SHOWN_COMMITS_LARGE = 3;
 const SHOWN_PROBLEM_GROUPS = 2;
-
-const words = (p: OpenProblem) => describeFailure(p.command, p.error);
 
 // Sentences of one-line text: split after . ! ? before the next word.
 const sentences = (text: string) =>
@@ -59,13 +57,27 @@ function workTime(f: BriefFacts): string | null {
 }
 
 export function headerLine(f: BriefFacts, now: Date): string {
-  const time = workTime(f);
+  return headerParts(f, now, true, true).join(' · ');
+}
+
+function headerParts(f: BriefFacts, now: Date, withTime: boolean, withBranch: boolean): string[] {
+  const time = withTime ? workTime(f) : null;
   return [
     f.project.name,
     f.lastActiveAt ? `last worked ${relativeAgo(f.window.to, now)}` : 'no activity recorded yet',
     ...(time ? [time] : []),
-    ...(f.branch ? [`branch ${f.branch}`] : []),
-  ].join(' · ');
+    ...(withBranch && f.branch ? [`branch ${f.branch}`] : []),
+  ];
+}
+
+// The header, never cut (owner decision after Task 15d): too long for one
+// line, it first drops the time estimate, then puts the branch on its own line.
+export function headerLines(f: BriefFacts, now: Date, width: number | null): string[] {
+  const full = headerLine(f, now);
+  if (width === null || [...full].length <= width) return [full];
+  const noTime = headerParts(f, now, false, true).join(' · ');
+  if ([...noTime].length <= width) return [noTime];
+  return [headerParts(f, now, true, false).join(' · '), `${INDENT}on branch ${f.branch as string}`];
 }
 
 // "You were building forgot password." — from the work summary, else the
@@ -87,8 +99,8 @@ function claimSentence(f: BriefFacts): string | null {
   const said = whole
     ? `${agentName(c.source)} said "${c.message}", but`
     : `${agentName(c.source)} said it was done, but`;
-  const problem = claimedProblem(f);
-  if (problem) return `${said} ${words(problem).still}.`;
+  const group = claimGroup(f);
+  if (group) return `${said} ${group.still}.`;
   const n = Number(UNCOMMITTED.exec(c.contradictions[0] ?? '')?.[1] ?? 0);
   if (n > 0) return `${said} ${plural(n, 'file')} ${n === 1 ? 'is' : 'are'} still uncommitted.`;
   return `${said} ${c.contradictions[0] ?? 'something is still open'}.`;
@@ -96,12 +108,14 @@ function claimSentence(f: BriefFacts): string | null {
 
 // A claim that doesn't fit drops its quote ("Claude said it was done, but
 // …"): a quote is never cut, and the "but" part always stays.
-function fitClaim(text: string, prefix: string, width: number): string {
-  if ([...(prefix + text)].length <= width) return text;
+// Still too long without the quote, the line wraps (never cut, after 15d).
+function fitClaim(text: string, prefix: string, width: number): string[] {
+  if ([...(prefix + text)].length <= width) return [`${prefix}${text}`];
   const m = /^(.*? said ")(.*)(", but .*)$/.exec(text);
-  if (!m) return fit(prefix, text, width);
-  const [head, tail] = [m[1] as string, m[3] as string];
-  return fit(prefix, `${head.replace(/ said "$/, ' said it was done')}${tail.slice(1)}`, width);
+  const unquoted = m
+    ? `${(m[1] as string).replace(/ said "$/, ' said it was done')}${(m[3] as string).slice(1)}`
+    : text;
+  return wrap(prefix, unquoted, width);
 }
 
 // The agent's last update as whole sentences that fit in `room` characters; a
@@ -118,16 +132,17 @@ function wholeSentences(text: string, room: number): string | null {
   return out === '' ? null : out;
 }
 
-// The problems the claim doesn't name, one per way they read, newest first;
-// one that reads like the claimed problem isn't repeated.
-function problemGroups(f: BriefFacts): string[] {
+// The shared problem groups (one count in every view, after Task 15d): the
+// group the claim names, and the others, newest first.
+function claimGroup(f: BriefFacts): ProblemGroup | null {
   const named = claimedProblem(f);
-  const texts: string[] = named ? [words(named).now] : [];
-  for (const p of f.openProblems) {
-    const text = words(p).now;
-    if (!texts.includes(text)) texts.push(text);
-  }
-  return named ? texts.slice(1) : texts;
+  return named === null
+    ? null
+    : (groupProblems(f.openProblems).find((g) => g.problems.includes(named)) ?? null);
+}
+function otherGroups(f: BriefFacts): ProblemGroup[] {
+  const named = claimedProblem(f);
+  return groupProblems(f.openProblems).filter((g) => named === null || !g.problems.includes(named));
 }
 
 // The claim says the files are uncommitted ("Committed", 3 uncommitted files).
@@ -149,6 +164,7 @@ interface Writer {
   indent: string;
   bullet: string;
   line(text: string, prefix?: string): void;
+  wrapLine(text: string): void; // wraps instead of cutting
   room(prefix?: string): number; // characters left on a line after `prefix`
   tailLine(text: string, tail: string, prefix?: string): void; // keeps `tail` whole
   problemLine(label: string, text: string, tail: string, prefix?: string): void;
@@ -168,6 +184,8 @@ function writer(opts: Opts): Writer {
     indent,
     bullet: terminal ? BULLET : '- ',
     line: (text, prefix = indent) => out.push(cut(prefix, text)),
+    wrapLine: (text) =>
+      out.push(...(terminal ? wrap(indent, text, opts.width as number) : [cut(indent, text)])),
     room: (prefix = indent) =>
       terminal
         ? (opts.width as number) - [...prefix].length
@@ -183,9 +201,7 @@ function writer(opts: Opts): Writer {
           : cut(prefix, `${label}${text}${tail}`),
       ),
     claimLine: (text, prefix = indent) =>
-      out.push(
-        terminal ? `${prefix}${fitClaim(text, prefix, opts.width as number)}` : cut(prefix, text),
-      ),
+      out.push(...(terminal ? fitClaim(text, prefix, opts.width as number) : [cut(prefix, text)])),
   };
 }
 
@@ -202,15 +218,16 @@ function stoppedLines(f: BriefFacts, w: Writer): void {
   const claim = claimSentence(f);
   if (claim) {
     w.claimLine(claim);
-    const also = extras(f, f.openProblems.length - (claimedProblem(f) ? 1 : 0));
+    const also = extras(f, otherGroups(f).length);
     if (also.length > 0) w.line(`Also open: ${also.join(' · ')}`);
     return;
   }
-  const top = problemGroups(f)[0];
+  const groups = otherGroups(f);
+  const top = groups[0];
   const files = f.unfinished.files.length;
   if (top !== undefined) {
-    const rest = extras(f, f.openProblems.length - 1);
-    w.problemLine('Stopped: ', top, rest.length > 0 ? ` · ${rest.join(' · ')}` : '');
+    const rest = extras(f, groups.length - 1);
+    w.problemLine('Stopped: ', top.now, rest.length > 0 ? ` · ${rest.join(' · ')}` : '');
   } else if (files > 0) w.line(`Stopped: ${plural(files, 'uncommitted file')}`);
   else if (f.branch !== null) w.line('Stopped: nothing open, all changes committed');
 }
@@ -219,7 +236,7 @@ function notesAndNext(f: BriefFacts, w: Writer): void {
   const nextNote = [...f.notes].reverse().find((n) => NEXT_NOTE.test(n));
   for (const note of f.notes) if (note !== nextNote) w.line(`Note: ${note}`);
   const next = plainNextStep(f);
-  if (next) w.line(`Next: ${sentence(next)}`);
+  if (next) w.wrapLine(`Next: ${sentence(next)}`); // the next step is never cut
 }
 
 // Large work: the newest commit subjects, one per line under the count
@@ -294,9 +311,9 @@ function largeLines(f: BriefFacts, w: Writer): void {
   else if (f.lastAgent && updateText(f, w, w.bullet) !== null) {
     stopped.push(() => updateLine(f, w, w.bullet));
   }
-  const groups = problemGroups(f);
-  const shown = groups.slice(0, SHOWN_PROBLEM_GROUPS);
-  const others = f.openProblems.length - (claimedProblem(f) ? 1 : 0) - shown.length;
+  const groups = otherGroups(f);
+  const shown = groups.slice(0, SHOWN_PROBLEM_GROUPS).map((g) => g.now);
+  const others = groups.length - shown.length;
   shown.forEach((text, i) => {
     const tail =
       i === shown.length - 1 && others > 0
@@ -315,8 +332,7 @@ function largeLines(f: BriefFacts, w: Writer): void {
 }
 
 function header(f: BriefFacts, polished: string | null, opts: Opts, w: Writer): void {
-  const first = headerLine(f, opts.now);
-  w.out.push(opts.width === null ? first : fit('', first, opts.width));
+  w.out.push(...headerLines(f, opts.now, opts.width));
   if (polished) w.out.push(...polished.split('\n').map((l) => `${w.indent}${l}`)); // prose, not cut
 }
 

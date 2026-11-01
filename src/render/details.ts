@@ -1,12 +1,13 @@
 import type { BriefFacts, OpenProblem } from '../brief/facts.ts';
-import { attemptWords, describeFailure } from '../brief/failure-words.ts';
+import { attemptWords } from '../brief/failure-words.ts';
+import { groupProblems, type ProblemGroup } from '../brief/groups.ts';
 import { agentName, plainNextStep } from '../brief/next-step.ts';
 import { folderName } from '../brief/work.ts';
 import { isLookAround, referencesTempDir } from '../collectors/scratch.ts';
 import { commandFiles, displayCommand } from '../model/event.ts';
-import { headerLine, youWereLine } from './narrative.ts';
-import { fit, fitProblemLine, LINE_WIDTH, painter } from './terminal.ts';
-import { capItems, plural } from './text.ts';
+import { headerLines, youWereLine } from './narrative.ts';
+import { LINE_WIDTH, painter } from './terminal.ts';
+import { capItems, plural, wrap } from './text.ts';
 
 // `leftoff resume --details` (dogfooding after Task 15c): the brief's plain
 // words with every open problem as a numbered block — what is wrong, the key
@@ -25,22 +26,6 @@ const capital = (text: string) =>
 const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`);
 const joinAnd = (items: string[]) =>
   items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
-
-// Problems that read the same ("Ruff finds unformatted files") are one block.
-interface Group {
-  words: ReturnType<typeof describeFailure>;
-  problems: OpenProblem[];
-}
-function groupsOf(f: BriefFacts): Group[] {
-  const groups: Group[] = [];
-  for (const p of f.openProblems) {
-    const words = describeFailure(p.command, p.error);
-    const same = groups.find((g) => g.words.now === words.now);
-    if (same) same.problems.push(p);
-    else groups.push({ words, problems: [p] });
-  }
-  return groups;
-}
 
 // An attempt worth listing (dogfooding after Task 15d): one that reads as
 // words ("reading a.ts", "checking the diff", "running the core tests"), or a
@@ -70,22 +55,22 @@ function introLine(f: BriefFacts, n: number): string {
     : `${agentName(c.source)} said it was done. ${count}`;
 }
 
-function problemBlock(g: Group, i: number): string[] {
+function problemBlock(g: ProblemGroup, i: number): string[] {
   const first = g.problems[0] as OpenProblem;
-  const label = `${INDENT}${i + 1}. `;
-  const out = [`${label}${fitProblemLine(label, capital(g.words.now))}`];
-  const line = (text: string) => out.push(`${BLOCK}${fit(BLOCK, text)}`);
-  if (!g.words.now.includes(first.error) && !SAYS_NOTHING.test(first.error)) {
-    line(`Error: ${first.error}`);
-  }
+  const out = wrap(`${INDENT}${i + 1}. `, g.now, LINE_WIDTH).map((l, j) =>
+    j === 0 ? l : `${BLOCK}${l.trimStart()}`,
+  );
+  const line = (text: string) => out.push(...wrap(BLOCK, text, LINE_WIDTH));
+  if (!SAYS_NOTHING.test(first.error)) line(`Error output: ${first.error}`);
   const commands = [...new Set(g.problems.flatMap((p) => (p.command === null ? [] : [p.command])))];
-  if (commands.length > 0)
+  if (commands.length > 0) {
     line(`${commands.length === 1 ? 'Command' : 'Commands'}: ${commands.join('; ')}`);
+  }
   const files = [...new Set(commands.flatMap((c) => commandFiles(c)))].sort();
-  if (files.length > 0) line(`Files: ${capItems(files, MAX_FILES).join(', ')}`);
+  if (files.length > 0) line(`Files: ${files.join(', ')}`);
   const attempts = g.problems.flatMap((p) => p.attempts).filter(worthListing);
   const tried = [...new Set(attempts.map(attemptWords))].slice(0, MAX_ATTEMPTS);
-  if (tried.length > 0) line(`Already tried: ${tried.join(', ')}`);
+  line(tried.length > 0 ? `Already tried: ${tried.join(', ')}` : 'Nothing tried yet.');
   return out;
 }
 
@@ -108,12 +93,14 @@ export function renderDetails(
   opts: { color: boolean; now?: Date },
 ): string {
   const p = painter(opts.color);
-  const line = (text: string) => `${INDENT}${fit(INDENT, text)}`;
-  const out = [p.bold(fit('', headerLine(f, opts.now ?? new Date()), LINE_WIDTH))];
+  // every line wraps; nothing in the full view is cut
+  const line = (text: string) => wrap(INDENT, text, LINE_WIDTH).join('\n');
+  const [first = '', ...rest] = headerLines(f, opts.now ?? new Date(), LINE_WIDTH);
+  const out = [p.bold(first), ...rest];
   if (polished) out.push(...polished.split('\n').map((l) => `${INDENT}${l}`)); // prose, not cut
   const youWere = youWereLine(f.work.workingOn, f.lastIntent);
   if (youWere) out.push(line(youWere));
-  const groups = groupsOf(f);
+  const groups = groupProblems(f.openProblems);
   out.push(line(introLine(f, groups.length)));
   groups.slice(0, MAX_PROBLEMS).forEach((g, i) => out.push('', ...problemBlock(g, i)));
   if (groups.length > MAX_PROBLEMS) {

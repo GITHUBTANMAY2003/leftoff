@@ -23,7 +23,12 @@ import {
   type WorkEvent,
 } from '../model/event.ts';
 import type { Repo } from '../store/repo.ts';
-import { failureCategory, isWholeProjectRun, resolvedCategories } from './failure-words.ts';
+import {
+  failureCategory,
+  isWholeProjectRun,
+  resolvedCategories,
+  type FailureCategory,
+} from './failure-words.ts';
 import { chooseNextStep } from './next-step.ts';
 import { readmeOneLiner } from './readme.ts';
 import { summarizeWork, type WorkSummary } from './work.ts';
@@ -297,9 +302,13 @@ function problemGroups(events: WorkEvent[]): Map<string, ProblemGroup> {
     if (succeeded && command !== null) {
       // A filtered pass speaks for the command before the filter.
       const ran = e.kind === 'command' ? command : normalizeCommand(withoutFilters(command));
-      const category = isWholeProjectRun(ran) ? failureCategory(ran) : null;
-      const covered = category === null ? [] : resolvedCategories(category);
-      if (category !== null) passedCheckAt = index;
+      // A successful chain ran each of its steps: a whole-project check among
+      // them counts too (`npx prettier …; npm run check | grep …`).
+      const checks = [ran, ...(chainSteps(ran).length > 1 ? chainSteps(ran) : [])]
+        .filter(isWholeProjectRun)
+        .map((step) => failureCategory(step) as FailureCategory);
+      const covered = checks.flatMap(resolvedCategories);
+      if (checks.length > 0) passedCheckAt = index;
       for (const [name, group] of groups) {
         const failed = commandOf(group.failures[0] as WorkEvent);
         if (failed === null) continue;
