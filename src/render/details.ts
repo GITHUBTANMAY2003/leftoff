@@ -2,7 +2,8 @@ import type { BriefFacts, OpenProblem } from '../brief/facts.ts';
 import { attemptWords, describeFailure } from '../brief/failure-words.ts';
 import { agentName, plainNextStep } from '../brief/next-step.ts';
 import { folderName } from '../brief/work.ts';
-import { commandFiles } from '../model/event.ts';
+import { isLookAround, referencesTempDir } from '../collectors/scratch.ts';
+import { commandFiles, displayCommand } from '../model/event.ts';
 import { headerLine, youWereLine } from './narrative.ts';
 import { fit, fitProblemLine, LINE_WIDTH, painter } from './terminal.ts';
 import { capItems, plural } from './text.ts';
@@ -25,30 +26,65 @@ const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`);
 const joinAnd = (items: string[]) =>
   items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
-// "Codex said "…". 2 things are still not right:"
-function introLine(f: BriefFacts): string {
-  const n = f.openProblems.length;
+// Problems that read the same ("Ruff finds unformatted files") are one block.
+interface Group {
+  words: ReturnType<typeof describeFailure>;
+  problems: OpenProblem[];
+}
+function groupsOf(f: BriefFacts): Group[] {
+  const groups: Group[] = [];
+  for (const p of f.openProblems) {
+    const words = describeFailure(p.command, p.error);
+    const same = groups.find((g) => g.words.now === words.now);
+    if (same) same.problems.push(p);
+    else groups.push({ words, problems: [p] });
+  }
+  return groups;
+}
+
+// An attempt worth listing (dogfooding after Task 15d): one that reads as
+// words ("reading a.ts", "checking the diff", "running the core tests"), or a
+// real command. Not raw look-arounds (`clear`, `ls … | head`), git chores,
+// temp-folder commands or one-off scripts.
+function worthListing(attempt: string): boolean {
+  if (referencesTempDir(attempt)) return false;
+  const words = attemptWords(attempt);
+  if (words === 'running a script' || words === 'checking git') return false;
+  if (!words.startsWith('`')) return true;
+  return !isLookAround(attempt) && !/^git\s/.test(displayCommand(attempt));
+}
+// An error line that says no more than "it failed".
+const SAYS_NOTHING = /^(failed|exit code \d+)$/;
+
+// "Codex said "…". 2 things are still not right:" — a quote that doesn't fit
+// the line is left out, never cut.
+function introLine(f: BriefFacts, n: number): string {
   if (n === 0) return 'Nothing is failing.';
   const count = n === 1 ? '1 thing is still not right:' : `${n} things are still not right:`;
   const c = f.claimedDone;
   if (!c) return capital(count);
   const whole = !c.message.startsWith('…') && !c.message.endsWith('…');
-  const said = whole
-    ? `${agentName(c.source)} said "${c.message}"${/[.!?]$/.test(c.message) ? '' : '.'}`
-    : `${agentName(c.source)} said it was done.`;
-  return `${said} ${count}`;
+  const quoted = `${agentName(c.source)} said "${c.message}"${/[.!?]$/.test(c.message) ? '' : '.'} ${count}`;
+  return whole && [...(INDENT + quoted)].length <= LINE_WIDTH
+    ? quoted
+    : `${agentName(c.source)} said it was done. ${count}`;
 }
 
-function problemBlock(p: OpenProblem, i: number): string[] {
-  const words = describeFailure(p.command, p.error);
+function problemBlock(g: Group, i: number): string[] {
+  const first = g.problems[0] as OpenProblem;
   const label = `${INDENT}${i + 1}. `;
-  const out = [`${label}${fitProblemLine(label, capital(words.now))}`];
+  const out = [`${label}${fitProblemLine(label, capital(g.words.now))}`];
   const line = (text: string) => out.push(`${BLOCK}${fit(BLOCK, text)}`);
-  if (!words.now.includes(p.error)) line(`Error: ${p.error}`);
-  if (p.command !== null) line(`Command: ${p.command}`);
-  const files = p.command === null ? [] : commandFiles(p.command);
+  if (!g.words.now.includes(first.error) && !SAYS_NOTHING.test(first.error)) {
+    line(`Error: ${first.error}`);
+  }
+  const commands = [...new Set(g.problems.flatMap((p) => (p.command === null ? [] : [p.command])))];
+  if (commands.length > 0)
+    line(`${commands.length === 1 ? 'Command' : 'Commands'}: ${commands.join('; ')}`);
+  const files = [...new Set(commands.flatMap((c) => commandFiles(c)))].sort();
   if (files.length > 0) line(`Files: ${capItems(files, MAX_FILES).join(', ')}`);
-  const tried = [...new Set(p.attempts.map(attemptWords))].slice(0, MAX_ATTEMPTS);
+  const attempts = g.problems.flatMap((p) => p.attempts).filter(worthListing);
+  const tried = [...new Set(attempts.map(attemptWords))].slice(0, MAX_ATTEMPTS);
   if (tried.length > 0) line(`Already tried: ${tried.join(', ')}`);
   return out;
 }
@@ -77,11 +113,11 @@ export function renderDetails(
   if (polished) out.push(...polished.split('\n').map((l) => `${INDENT}${l}`)); // prose, not cut
   const youWere = youWereLine(f.work.workingOn, f.lastIntent);
   if (youWere) out.push(line(youWere));
-  out.push(line(introLine(f)));
-  const problems = f.openProblems.slice(0, MAX_PROBLEMS);
-  problems.forEach((problem, i) => out.push('', ...problemBlock(problem, i)));
-  if (f.openProblems.length > MAX_PROBLEMS) {
-    out.push('', line(`…and ${plural(f.openProblems.length - MAX_PROBLEMS, 'more problem')}`));
+  const groups = groupsOf(f);
+  out.push(line(introLine(f, groups.length)));
+  groups.slice(0, MAX_PROBLEMS).forEach((g, i) => out.push('', ...problemBlock(g, i)));
+  if (groups.length > MAX_PROBLEMS) {
+    out.push('', line(`…and ${plural(groups.length - MAX_PROBLEMS, 'more problem')}`));
   }
   out.push('');
   if (f.unfinished.files.length > 0) {

@@ -123,3 +123,51 @@ test('a problem whose words already include the error has no separate Error line
   expect(out).toContain('  1. `./deploy.sh` — connection refused');
   expect(out.some((l) => l.includes('Error:'))).toBe(false);
 });
+
+// ---- from the owner's real output ----
+
+test('attempts that only looked around, or were scratch, are not listed; a bare "failed" is no error line', () => {
+  const p = problem('cargo test -p core', 'failed', [
+    'clear',
+    'git push',
+    'cd /w/core && git push origin main',
+    'SCR="/private/tmp/agent/x" && cat $SCR',
+    'ls -la kb | head',
+    'Edited src/core.rs',
+    'cargo test -p core -- parse',
+  ]);
+  const out = render({ ...sample(), claimedDone: null, openProblems: [p] }).join('\n');
+  expect(out).toContain('     Already tried: editing core.rs, running the core tests');
+  expect(out).not.toContain('Error: failed');
+});
+
+test('problems that read the same are one block, with every command and file', () => {
+  const a = problem('uv run ruff format --check src/a.py', 'Would reformat: src/a.py', [
+    'Edited src/a.py',
+  ]);
+  const b = problem('uv run ruff format --check src/b.py tests/t.py', 'Would reformat: src/b.py', [
+    'Edited src/b.py',
+  ]);
+  const out = render({ ...sample(), claimedDone: null, openProblems: [a, b] });
+  expect(out).toContain('  1 thing is still not right:');
+  expect(out.join('\n')).toContain(
+    [
+      '  1. Ruff finds unformatted files',
+      '     Error: Would reformat: src/a.py',
+      '     Commands: uv run ruff format --check src/a.py; uv run ruff format --check src/b.py tests/t.py',
+      '     Files: src/a.py, src/b.py, tests/t.py',
+      '     Already tried: editing a.py, editing b.py',
+    ].join('\n'),
+  );
+});
+
+test('a claim quote too long for the intro line is left out, never cut', () => {
+  const f: BriefFacts = {
+    ...sample(),
+    claimedDone: {
+      ...(sample().claimedDone as NonNullable<BriefFacts['claimedDone']>),
+      message: `Tasks 0–10 are complete, with ${'the follow-up fixes '.repeat(4)}reviewed.`,
+    },
+  };
+  expect(render(f)).toContain('  Codex said it was done. 2 things are still not right:');
+});
