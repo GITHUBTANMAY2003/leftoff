@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from 'node:path';
+import { basename, isAbsolute, relative } from 'node:path';
 import type { WorkEvent } from '../model/event.ts';
 import { splitSessions } from './sessions.ts';
 
@@ -210,6 +210,18 @@ function withNewestCommit(phrase: string | null, subjects: string[]): string | n
 
 export const shortSubject = (subject: string) => subject.replace(COMMIT_PREFIX, '').trim();
 
+// No commits (owner decision after Task 15c): what the project is, from its
+// README, then where most changes were — "working on app (a shop): mostly docs".
+function readmeTopic(
+  root: string,
+  about: string | null,
+  folders: { path: string; files: number }[],
+): string | null {
+  if (about === null) return null;
+  const where = folders.filter((f) => f.path !== '.').slice(0, 2);
+  return `working on ${basename(root)} (${about})${where.length > 0 ? `: mostly ${joinAnd(where.map((f) => f.path))}` : ''}`;
+}
+
 // ---- time ----
 
 function activeMinutes(events: WorkEvent[], gapMinutes: number): number {
@@ -239,7 +251,7 @@ function workDays(sorted: WorkEvent[]): number {
 
 export function summarizeWork(
   events: WorkEvent[],
-  opts: { root: string; branch: string | null; gapMinutes: number },
+  opts: { root: string; branch: string | null; gapMinutes: number; about?: string | null },
 ): WorkSummary {
   const sorted = [...events].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   const rawCommits = sorted.filter((e) => e.kind === 'commit').map((e) => e.summary);
@@ -253,6 +265,7 @@ export function summarizeWork(
     .find((s) => s !== null);
   const workingOn =
     withNewestCommit(branchPhrase(opts.branch) ?? commitTopic(rawCommits), rawCommits) ??
+    readmeTopic(opts.root, opts.about ?? null, folders) ??
     (request ? `working on: ${request}` : null) ??
     (folders.some((f) => f.path !== '.')
       ? `working in ${joinAnd(

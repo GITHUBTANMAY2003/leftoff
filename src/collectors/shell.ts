@@ -13,6 +13,7 @@ import { paths } from '../core/paths.ts';
 import { dedupeKey, makeEvent, type WorkEvent } from '../model/event.ts';
 import { isInsideLeftoffHome, resolveProject } from '../model/project.ts';
 import { compileIgnore } from './ignore.ts';
+import { isLeftoffCommand } from './scratch.ts';
 import { isProbeFailure } from './probes.ts';
 import { pastDeadline, type CollectContext, type CollectResult, type Collector } from './types.ts';
 
@@ -169,6 +170,7 @@ export const shellCollector: Collector = {
         if (isInsideLeftoffHome(parsed.cwd)) continue; // recursion guard (§1.9)
         if (ignore.isIgnoredProject(parsed.cwd)) continue;
         if (ignore.isIgnoredCommand(parsed.command)) continue;
+        if (isLeftoffCommand(parsed.command)) continue; // never its own commands
         result.events.push(toEvent(raw, parsed));
       }
       let offset = chunk.next;

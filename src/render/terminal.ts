@@ -1,10 +1,8 @@
-import { problemText, type BriefFacts } from '../brief/facts.ts';
-import { relativeAgo } from '../core/time.ts';
-import { splitProblems } from './problems.ts';
-import { capItems, clip, clipMiddle } from './text.ts';
+import type { BriefFacts } from '../brief/facts.ts';
+import { clip, clipMiddle } from './text.ts';
 
-// The terminal brief (spec §1.8; the §1.1 example is the exact reference).
-// Headings in this order; empty sections omitted; no footer after Sources.
+// Terminal helpers shared by the renderers: line fitting, colors and the
+// Sources line (the brief itself is in narrative.ts and details.ts).
 
 // Each fact line is cut to this many characters (code points) with "…"; only
 // the terminal does this (owner decision after Task 10).
@@ -14,18 +12,11 @@ export function fit(prefix: string, text: string, width = LINE_WIDTH): string {
   return clip(text, width - [...prefix].length);
 }
 
-// Lists show at most this many items, then "+N more" (owner decision after Task 13);
-// open problems at most 3, newest first (Task 15b).
-const MAX_ITEMS = 5;
-const MAX_PROBLEMS = 3;
-
 // Cuts `text` but keeps `tail` whole after it, so an ending such as
 // "(still failing)" or "(2 attempts)" always survives (owner decision, Task 11).
 export function fitKeepingTail(prefix: string, text: string, tail: string): string {
   return fit(prefix + tail, text) + tail;
 }
-
-const STILL_FAILING = ' (still failing)';
 
 // A problem line is "`command` — error". When it is too long the command is
 // shortened from the middle, so the error stays visible (owner decision after
@@ -67,14 +58,6 @@ export function painter(color: boolean) {
   };
 }
 
-export function header(f: BriefFacts, now: Date): string {
-  const where = f.branch ? `${f.project.name} (${f.branch})` : f.project.name;
-  const when = f.lastActiveAt
-    ? `last active ${relativeAgo(f.lastActiveAt, now)}`
-    : 'no activity recorded yet';
-  return `Where you left off — ${where} · ${when}`;
-}
-
 export function sourcesLine(
   f: BriefFacts,
   separator: string,
@@ -92,58 +75,4 @@ export function sourcesLine(
     return `${s.name} ${colored}`;
   });
   return `Sources: ${marks.join(separator)}`;
-}
-
-export function renderTerminal(
-  f: BriefFacts,
-  polished: string | null,
-  opts: { color: boolean; now?: Date },
-): string {
-  const now = opts.now ?? new Date();
-  const p = painter(opts.color);
-  const blocks: string[][] = [[p.bold(fit('', header(f, now)))]];
-  if (polished) blocks.push([polished]); // prose, not cut
-  const section = (title: string, lines: string[]) => {
-    if (lines.length > 0) blocks.push([p.bold(title), ...lines]);
-  };
-  const bullet = (text: string) => `  • ${fit('  • ', text)}`;
-  const problem = (text: string, attempts: string[]) => [
-    `  ${p.red('✗')} ${
-      text.endsWith(STILL_FAILING)
-        ? fitProblemLine('  ✗ ', text.slice(0, -STILL_FAILING.length), STILL_FAILING) +
-          STILL_FAILING
-        : fitProblemLine('  ✗ ', text)
-    }`,
-    ...(attempts.length > 0 ? [p.dim(fit('', `    tried: ${attempts.join(' · ')}`))] : []),
-  ];
-  // At most MAX_PROBLEMS problems, each with its tried: line, then "+N more".
-  const problems = (items: { text: string; attempts: string[] }[]) => [
-    ...items.slice(0, MAX_PROBLEMS).flatMap((x) => problem(x.text, x.attempts)),
-    ...(items.length > MAX_PROBLEMS ? [bullet(`+${items.length - MAX_PROBLEMS} more`)] : []),
-  ];
-  const { claimed, open } = splitProblems(f);
-
-  if (f.claimedDone) {
-    const c = f.claimedDone;
-    section('Agent said done, but', [
-      fit('', `  ${c.source} said: "${c.message}" (${relativeAgo(c.at, now)})`),
-      ...problems(claimed),
-    ]);
-  }
-  section('Done', capItems(f.done, MAX_ITEMS).map(bullet));
-  section(
-    'Unfinished',
-    capItems(
-      f.unfinished.files.map((file) => `${file.path} (${file.status})`),
-      MAX_ITEMS,
-    ).map(bullet),
-  );
-  section(
-    'Open problems',
-    problems(open.map((o) => ({ text: problemText(o), attempts: o.attempts }))),
-  );
-  section('Notes', f.notes.map(bullet));
-  section('Next step', f.nextStep ? [`  ${p.cyan('→')} ${fit('  → ', f.nextStep)}`] : []);
-  blocks.push([sourcesLine(f, '  ', opts.color ? p : undefined)]);
-  return blocks.map((b) => b.join('\n')).join('\n\n');
 }

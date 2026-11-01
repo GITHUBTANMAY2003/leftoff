@@ -1089,3 +1089,67 @@ test('exit 127 (command not found) from your own shell is a typo, not a problem;
   ]);
   expect(problems.map((p) => p.command)).toEqual(['pnpm install']);
 });
+
+// ---- dogfooding after 15c: leftoff's own commands and look-arounds ----
+
+test("leftoff's own commands are not problems, work, or activity", () => {
+  const events = [
+    ...rahulEvents(),
+    at(
+      '2026-10-20T18:40:00.000Z',
+      'command_failed',
+      'typo',
+      {
+        command: 'leftoff resume--details',
+        exitCode: 1,
+        error: "error: unknown command 'resume--details'",
+      },
+      'shell',
+    ),
+  ];
+  const f = buildFacts(RAHUL_ROOT, deps(events));
+  expect(f.openProblems.map((p) => p.command)).toEqual(['python scripts/send_test_email.py']);
+  expect(f.window.to).toBe('2026-10-20T18:30:00.000Z');
+});
+
+test('look-around commands after the work do not move "last worked"; a real command does', () => {
+  const lookAround = [
+    at(
+      '2026-10-20T18:35:00.000Z',
+      'command',
+      'git status',
+      { command: 'git status', exitCode: 0 },
+      'shell',
+    ),
+    at(
+      '2026-10-20T18:36:00.000Z',
+      'command',
+      'git log --oneline',
+      { command: 'git log --oneline', exitCode: 0 },
+      'shell',
+    ),
+    at(
+      '2026-10-20T18:37:00.000Z',
+      'command',
+      'ls src',
+      { command: 'ls src', exitCode: 0 },
+      'shell',
+    ),
+  ];
+  expect(buildFacts(RAHUL_ROOT, deps([...rahulEvents(), ...lookAround])).window.to).toBe(
+    '2026-10-20T18:30:00.000Z',
+  );
+});
+
+test('a real command after the work does move "last worked"', () => {
+  const real = at(
+    '2026-10-20T18:40:00.000Z',
+    'command',
+    'npm run build',
+    { command: 'npm run build', exitCode: 0 },
+    'shell',
+  );
+  expect(buildFacts(RAHUL_ROOT, deps([...rahulEvents(), real])).window.to).toBe(
+    '2026-10-20T18:40:00.000Z',
+  );
+});

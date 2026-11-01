@@ -120,7 +120,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
   const { makeEvent } = await import('../../src/model/event.ts');
   const { buildFacts } = await import('../../src/brief/facts.ts');
   const { DEFAULT_CONFIG } = await import('../../src/core/config.ts');
-  const { renderTerminal } = await import('../../src/render/terminal.ts');
+  const { renderDetails } = await import('../../src/render/details.ts');
   const { renderAutoBrief } = await import('../../src/render/auto.ts');
   const { renderLooseEnds } = await import('../../src/render/loose-ends.ts');
   const { plainNextStep } = await import('../../src/brief/next-step.ts');
@@ -157,7 +157,7 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
     const want = '`cargo test -p billing_adapters` — test result: FAILED';
     const cleaned = '`cargo test -p billing_adapters`';
     const outputs = [
-      renderTerminal(f, null, { color: false, now: RAHUL_NOW }),
+      renderDetails(f, null, { color: false, now: RAHUL_NOW }),
       renderAutoBrief(f, { color: false, now: RAHUL_NOW }),
       renderLooseEnds(
         [
@@ -182,7 +182,8 @@ test('every output shows the cleaned command: no setup prefix, no trailing filte
     ];
     for (const out of outputs) {
       // the auto brief and loose ends say it in words and name the command in the next step
-      expect(out).toContain(out === outputs[1] || out === outputs[2] ? cleaned : want);
+      // the agent context lists the problem as it is; the others say it in words and name the command
+      expect(out).toContain(out === outputs[3] ? want : cleaned);
       expect(out).not.toContain('source "$HOME');
       expect(out).not.toContain('grep -E');
     }
@@ -212,6 +213,8 @@ test('after large work the agent context has the sections, bullets as "- "', () 
     },
   };
   const out = renderAgentContext(f, null, { now: RAHUL_NOW });
-  expect(out).toContain('What got done\n- 2 commits: Added reset-token migration;');
+  expect(out).toContain(
+    'What got done\n- 2 commits, the newest:\n  - Added reset-token migration\n  - Built POST',
+  );
   expect(out).toContain("Where it stopped\n- Claude's last update:");
 });

@@ -315,3 +315,57 @@ export function describeFailure(command: string | null, error: string): FailureW
     }
   }
 }
+
+// What an attempt was, in words (resume --details, dogfooding after Task 15c):
+// "editing exceptions.py", "running the reset tests", "reading a.ts",
+// "searching the code". Anything else stays the cleaned command.
+const EDIT_VERBS: Record<string, string> = {
+  Edited: 'editing',
+  Wrote: 'writing',
+  Created: 'creating',
+  Updated: 'updating',
+  Deleted: 'deleting',
+  Added: 'adding',
+  Renamed: 'renaming',
+};
+const READERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'nl']);
+const SEARCHERS = new Set(['rg', 'grep', 'egrep', 'ag', 'ack', 'find', 'fd']);
+const MAX_ATTEMPT_CHARS = 50;
+
+export function attemptWords(attempt: string): string {
+  const edit = /^(\w+) (.+)$/.exec(attempt);
+  if (edit && EDIT_VERBS[edit[1] as string]) {
+    return `${EDIT_VERBS[edit[1] as string]} ${basename(edit[2] as string)}`;
+  }
+  if (/<</.test(attempt) || attempt.endsWith(' …')) return 'running a script';
+  const shown = displayCommand(attempt);
+  const kind = classify(shown);
+  if (kind !== null) {
+    switch (kind.category) {
+      case 'test':
+        return `running ${testSubject(shown, kind.label)}`;
+      case 'lint':
+      case 'format':
+      case 'typecheck':
+        return `running ${kind.label ?? (kind.category === 'typecheck' ? 'the type check' : 'the linter')}`;
+      case 'build':
+        return 'building';
+      case 'check':
+        return 'running the project checks';
+      case 'docker':
+        return 'building the Docker image';
+      default:
+        return `running \`${shown}\``;
+    }
+  }
+  const [program = '', sub = ''] = wordsOf(shown);
+  if (READERS.has(program) || (program === 'sed' && sub === '-n')) {
+    const files = commandFiles(shown).map((f) => basename(f));
+    return files.length > 0 ? `reading ${files.join(', ')}` : 'reading files';
+  }
+  if (SEARCHERS.has(program)) return 'searching the code';
+  if (program === 'git' && sub === 'diff') return 'checking the diff';
+  if (program === 'git' && ['status', 'log', 'show'].includes(sub)) return 'checking git';
+  const chars = [...shown];
+  return `\`${chars.length <= MAX_ATTEMPT_CHARS ? shown : `${chars.slice(0, MAX_ATTEMPT_CHARS - 1).join('')}…`}\``;
+}

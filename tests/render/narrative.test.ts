@@ -91,7 +91,7 @@ test('large work: sections for what got done and where it stopped (golden)', () 
   expect(out).toBe(golden('large-brief.txt'));
   const count = out.trimEnd().split('\n').length - 2; // without the details pointer
   expect(count).toBeGreaterThanOrEqual(8);
-  expect(count).toBeLessThanOrEqual(12);
+  expect(count).toBeLessThanOrEqual(14); // ~8–12, plus the 3 commit lines (owner decision after 15c)
 });
 
 test('small work: two or three lines', () => {
@@ -244,22 +244,62 @@ test('terminal lines are cut to 100 characters, the error of a problem stays vis
   expect(out.find((l) => l.includes('Stopped:'))).toContain('connection refused by host');
 });
 
-test('a long claim is shortened inside the quote, so "but …" stays on the line', () => {
+test('a quote that is not a complete sentence is left out: "said it was done, but …"', () => {
+  const f: BriefFacts = {
+    ...rahulFacts(),
+    openProblems: [problem('cargo test -p billing_adapters', 'test result: FAILED', true)],
+    claimedDone: {
+      source: 'codex',
+      message: '…the 51 existing relevant tests have also finished…',
+      at: '2026-10-20T18:30:00.000Z',
+      contradictions: ['`cargo test -p billing_adapters` — test result: FAILED (still failing)'],
+    },
+  };
+  expect(lines(f)).toContain(
+    'Codex said it was done, but the billing_adapters tests are still failing.',
+  );
+});
+
+test('a complete quote that does not fit the line is left out too, never cut', () => {
   const f: BriefFacts = {
     ...rahulFacts(),
     openProblems: [problem('cargo test -p billing_adapters', 'test result: FAILED', true)],
     claimedDone: {
       source: 'claude',
-      message: `…${'the plan records exactly where to pick up '.repeat(3)}and it is done.`,
+      message: `The plan records exactly where to pick up ${'and more '.repeat(8)}and it is done.`,
       at: '2026-10-20T18:30:00.000Z',
       contradictions: ['`cargo test -p billing_adapters` — test result: FAILED (still failing)'],
     },
   };
   const line = renderBrief(f, null, { color: false, now: RAHUL_NOW })
     .split('\n')
-    .find((l) => l.includes(' said "')) as string;
-  expect([...line].length).toBeLessThanOrEqual(100);
-  expect(line).toMatch(/…", but the billing_adapters tests are still failing\.$/);
+    .find((l) => l.includes(' said ')) as string;
+  expect(line).toBe('  Claude said it was done, but the billing_adapters tests are still failing.');
+});
+
+test("the agent's last update shows whole sentences that fit, or nothing", () => {
+  const update = (text: string) =>
+    renderBrief(
+      { ...rahulFacts(), lastAgent: { source: 'claude', update: text, question: null } },
+      null,
+      {
+        color: false,
+        now: RAHUL_NOW,
+      },
+    )
+      .split('\n')
+      .find((l) => l.includes("Claude's last update"));
+  expect(
+    update(
+      `The build is paused. ${'I stopped the helper that was still running tests. '.repeat(2)}`,
+    ),
+  ).toBe(
+    "  Claude's last update: The build is paused. I stopped the helper that was still running tests.",
+  ); // a third would not fit
+  expect(update(`${'word '.repeat(30)}done.`)).toBeUndefined(); // one sentence, too long
+  expect(update('The build is paused. I stopped the one…')).toBe(
+    "  Claude's last update: The build is paused.",
+  );
 });
 
 test('first line without a branch', () => {
@@ -319,7 +359,7 @@ test('the request fallback uses the same filter: a statement or hedge is not wha
   expect(out.some((l) => l.startsWith('You were'))).toBe(false);
 });
 
-test('a claim whose "but" part is long drops the quote instead of losing the "but"', () => {
+test('a claim whose "but" part is long drops the quote, never the "but"', () => {
   const p = problem('ollama serve', 'exit code 137');
   const f: BriefFacts = {
     ...rahulFacts(),
@@ -335,7 +375,7 @@ test('a claim whose "but" part is long drops the quote instead of losing the "bu
     .split('\n')
     .find((l) => l.includes('Codex said')) as string;
   expect(line).toBe(
-    '  Codex said done, but `ollama serve` still gets killed (exit code 137, often out of memory).',
+    '  Codex said it was done, but `ollama serve` still gets killed (exit code 137, often out of memory).',
   );
 });
 
@@ -354,4 +394,13 @@ test('large: a long folders line keeps its file count', () => {
     .find((l) => l.includes('Most changes in')) as string;
   expect([...line].length).toBeLessThanOrEqual(100);
   expect(line.endsWith(' (32 files)')).toBe(true);
+});
+
+test('large: one or a few commits are listed one per line; a single commit stays on its line', () => {
+  const large = (commits: string[]) =>
+    lines(work(rahulFacts(), { size: 'large', commits, filesChanged: 0, topFolders: [] }));
+  expect(large(['first', 'second'])).toEqual(
+    expect.arrayContaining(['- 2 commits, the newest:', '  - second', '  - first']),
+  );
+  expect(large(['only one'])).toContain('- 1 commit: only one');
 });

@@ -275,3 +275,15 @@ test('an ignored project gets a marker too, so cd into it skips node', async () 
   expect(await runBriefAuto(project, deps())).toBe('');
   expect(quietUntil(project)).toBe(Math.floor((NOW.getTime() + 4 * HOUR) / 1000));
 });
+
+test('your home folder and / never get an auto brief (owner decision after 15c)', async () => {
+  const savedHome = process.env.HOME;
+  process.env.HOME = project; // pretend the project is the home folder
+  try {
+    seed(5);
+    expect(await runBriefAuto(project, deps())).toBe('');
+    expect(await runBriefAuto('/', deps())).toBe('');
+  } finally {
+    process.env.HOME = savedHome;
+  }
+});

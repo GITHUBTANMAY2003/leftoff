@@ -58,7 +58,7 @@ Anything unexpected goes into `docs/dogfood-log.md`.
 
 ## At the end of Task 17
 
-10. **Delete the pre-re-read backup** (kept until now, mode 600):
+10. **Delete the two backups** (kept until now, mode 600):
     ```bash
-    rm ~/.leftoff/leftoff-before-claude-reread.db
+    rm ~/.leftoff/leftoff-before-claude-reread.db ~/.leftoff/leftoff-before-files-backfill.db
     ```

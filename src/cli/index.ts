@@ -39,7 +39,7 @@ program
   .option('--project <path>', 'a project other than the current folder')
   .addOption(new Option('--json', 'print the facts as JSON').conflicts('md'))
   .addOption(new Option('--md', 'print Markdown').conflicts('json'))
-  .option('--details', 'show every command, error, attempt and file')
+  .option('--details', 'every open problem in full: command, error, files, what was tried')
   .option('--polish', 'write the AI summary now (needs a polish provider from setup)')
   .action(
     async (o: {

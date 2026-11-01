@@ -17,7 +17,7 @@ const BULLET = '    • ';
 const NEXT_NOTE = /^next:\s*/i;
 const UNCOMMITTED = /^(\d+) uncommitted files?$/;
 const SHOWN_COMMITS_MEDIUM = 2;
-const SHOWN_COMMITS_LARGE = 4;
+const SHOWN_COMMITS_LARGE = 3;
 const SHOWN_PROBLEM_GROUPS = 2;
 
 const words = (p: OpenProblem) => describeFailure(p.command, p.error);
@@ -82,7 +82,11 @@ const workingOnLine = (f: BriefFacts) => youWereLine(f.work.workingOn, f.lastInt
 function claimSentence(f: BriefFacts): string | null {
   const c = f.claimedDone;
   if (!c) return null;
-  const said = `${agentName(c.source)} said "${c.message}", but`;
+  // A quote is a complete sentence or nothing (dogfooding after Task 15c).
+  const whole = !c.message.startsWith('…') && !c.message.endsWith('…');
+  const said = whole
+    ? `${agentName(c.source)} said "${c.message}", but`
+    : `${agentName(c.source)} said it was done, but`;
   const problem = claimedProblem(f);
   if (problem) return `${said} ${words(problem).still}.`;
   const n = Number(UNCOMMITTED.exec(c.contradictions[0] ?? '')?.[1] ?? 0);
@@ -90,15 +94,28 @@ function claimSentence(f: BriefFacts): string | null {
   return `${said} ${c.contradictions[0] ?? 'something is still open'}.`;
 }
 
-// A long claim is shortened inside its quote, so `", but …` stays visible.
+// A claim that doesn't fit drops its quote ("Claude said it was done, but
+// …"): a quote is never cut, and the "but" part always stays.
 function fitClaim(text: string, prefix: string, width: number): string {
+  if ([...(prefix + text)].length <= width) return text;
   const m = /^(.*? said ")(.*)(", but .*)$/.exec(text);
   if (!m) return fit(prefix, text, width);
-  const [head, quoteText, tail] = [m[1] as string, m[2] as string, m[3] as string];
-  const room = width - [...(prefix + head + tail)].length;
-  if (room >= 20) return `${head}${clip(quoteText, room)}${tail}`;
-  // No room for the quote: "Codex said done, but …", so the "but" part stays.
-  return fit(prefix, `${head.replace(/ said "$/, ' said done')}${tail.slice(1)}`, width);
+  const [head, tail] = [m[1] as string, m[3] as string];
+  return fit(prefix, `${head.replace(/ said "$/, ' said it was done')}${tail.slice(1)}`, width);
+}
+
+// The agent's last update as whole sentences that fit in `room` characters; a
+// sentence cut when it was stored (ending in "…") is never shown. Null when
+// not even the first sentence fits.
+function wholeSentences(text: string, room: number): string | null {
+  let out = '';
+  for (const s of sentences(text)) {
+    if (s.endsWith('…')) break;
+    const next = out === '' ? s : `${out} ${s}`;
+    if ([...next].length > room) break;
+    out = next;
+  }
+  return out === '' ? null : out;
 }
 
 // The problems the claim doesn't name, one per way they read, newest first;
@@ -132,6 +149,7 @@ interface Writer {
   indent: string;
   bullet: string;
   line(text: string, prefix?: string): void;
+  room(prefix?: string): number; // characters left on a line after `prefix`
   tailLine(text: string, tail: string, prefix?: string): void; // keeps `tail` whole
   problemLine(label: string, text: string, tail: string, prefix?: string): void;
   claimLine(text: string, prefix?: string): void;
@@ -150,6 +168,10 @@ function writer(opts: Opts): Writer {
     indent,
     bullet: terminal ? BULLET : '- ',
     line: (text, prefix = indent) => out.push(cut(prefix, text)),
+    room: (prefix = indent) =>
+      terminal
+        ? (opts.width as number) - [...prefix].length
+        : (opts.maxChars ?? Number.MAX_SAFE_INTEGER),
     tailLine: (text, tail, prefix = indent) =>
       out.push(
         terminal ? `${prefix}${fitKeepingTail(prefix, text, tail)}` : cut(prefix, `${text}${tail}`),
@@ -200,6 +222,30 @@ function notesAndNext(f: BriefFacts, w: Writer): void {
   if (next) w.line(`Next: ${sentence(next)}`);
 }
 
+// Large work: the newest commit subjects, one per line under the count
+// (owner decision after Task 15c); a single commit stays on its line.
+function commitLines(f: BriefFacts, w: Writer): void {
+  const newest = [...f.work.commits].reverse();
+  if (newest.length === 1) {
+    w.line(`1 commit: ${newest[0] as string}`, w.bullet);
+    return;
+  }
+  w.line(`${plural(newest.length, 'commit')}, the newest:`, w.bullet);
+  const sub = w.bullet === '- ' ? '  - ' : '        ';
+  for (const subject of newest.slice(0, SHOWN_COMMITS_LARGE)) w.line(subject, sub);
+}
+
+function updateText(f: BriefFacts, w: Writer, prefix?: string): string | null {
+  if (!f.lastAgent) return null;
+  const label = `${agentName(f.lastAgent.source)}'s last update: `;
+  const text = wholeSentences(f.lastAgent.update, w.room(prefix) - [...label].length);
+  return text === null ? null : `${label}${text}`;
+}
+function updateLine(f: BriefFacts, w: Writer, prefix?: string): void {
+  const text = updateText(f, w, prefix);
+  if (text !== null) w.line(text, prefix);
+}
+
 // Small work: what it was about (and a claim, when there is one), then next.
 function smallLines(f: BriefFacts, w: Writer): void {
   const working = workingOnLine(f);
@@ -216,9 +262,7 @@ function mediumLines(f: BriefFacts, w: Writer): void {
   else if (f.work.filesChanged > 0) {
     w.line(`Done: changed ${plural(f.work.filesChanged, 'file')}, most in ${foldersText(f)}`);
   }
-  if (f.lastAgent && !f.claimedDone) {
-    w.line(`${agentName(f.lastAgent.source)}'s last update: ${f.lastAgent.update}`);
-  }
+  if (f.lastAgent && !f.claimedDone) updateLine(f, w);
   stoppedLines(f, w);
 }
 
@@ -229,7 +273,7 @@ function largeLines(f: BriefFacts, w: Writer): void {
 
   const done: (() => void)[] = [];
   if (f.work.commits.length > 0) {
-    done.push(() => w.line(commitsText(f, SHOWN_COMMITS_LARGE), w.bullet));
+    done.push(() => commitLines(f, w));
   }
   if (f.work.filesChanged > 0) {
     const n = plural(f.work.filesChanged, 'file');
@@ -247,9 +291,8 @@ function largeLines(f: BriefFacts, w: Writer): void {
   const stopped: (() => void)[] = [];
   const claim = claimSentence(f);
   if (claim) stopped.push(() => w.claimLine(claim, w.bullet));
-  else if (f.lastAgent) {
-    const update = `${agentName(f.lastAgent.source)}'s last update: ${f.lastAgent.update}`;
-    stopped.push(() => w.line(update, w.bullet));
+  else if (f.lastAgent && updateText(f, w, w.bullet) !== null) {
+    stopped.push(() => updateLine(f, w, w.bullet));
   }
   const groups = problemGroups(f);
   const shown = groups.slice(0, SHOWN_PROBLEM_GROUPS);

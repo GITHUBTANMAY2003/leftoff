@@ -85,9 +85,13 @@ test('bare `leftoff` lists the project with its open problem and uncommitted fil
 
 test('a missing source (no ~/.codex) still gives a brief, with "codex –"', () => {
   expect(existsSync(s.env.CODEX_HOME as string)).toBe(false);
-  const r = run(['resume', '--details'], { cwd: s.repo, env: s.env });
+  const r = run(['resume', '--json'], { cwd: s.repo, env: s.env });
   expect(r.status).toBe(0);
-  expect(r.stdout).toContain('Sources: claude ✓  git ✓  shell ✓  codex –');
+  expect(
+    JSON.parse(r.stdout).facts.sources.map(
+      (x: { name: string; status: string }) => `${x.name} ${x.status}`,
+    ),
+  ).toEqual(['claude ok', 'git ok', 'shell ok', 'codex not_found']);
 });
 
 test('secrets planted in the scenario never reach the database (Review Focus 3)', () => {

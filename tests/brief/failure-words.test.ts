@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  attemptWords,
   describeFailure,
   failureCategory,
   isWholeProjectRun,
@@ -234,4 +235,23 @@ test.each([
   [126, '`ollama serve` could not run (exit code 126, not executable)'],
 ])('exit code %i is put in words', (code, now) => {
   expect(describeFailure('ollama serve', `exit code ${code}`).now).toBe(now);
+});
+
+// ---- attempts in words (resume --details) ----
+
+test.each([
+  ['Edited src/app/exceptions.py', 'editing exceptions.py'],
+  ['Wrote docs/plan.md', 'writing plan.md'],
+  ['uv run pytest tests/test_errors.py', 'running the errors tests'],
+  ['npx eslint src', 'running ESLint'],
+  ['npm run build', 'building'],
+  ['cat tests/test_store.py', 'reading test_store.py'],
+  ["sed -n '1,40p' src/a.ts", 'reading a.ts'],
+  ['rg -n "MapError" src', 'searching the code'],
+  ['git diff --check', 'checking the diff'],
+  ['git status --short', 'checking git'],
+  ["python3 - <<'EOF' …", 'running a script'],
+  ['./deploy.sh --stage', '`./deploy.sh --stage`'],
+])('attemptWords(%j) → %j', (attempt, words) => {
+  expect(attemptWords(attempt)).toBe(words);
 });

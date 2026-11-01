@@ -1121,6 +1121,19 @@ As built; see `docs/reports/task-15c.md` and §1.8. Generic signals only (branch
 
 ---
 
+### Task 15d: Readable details and dogfood fixes (owner request during Task 17)
+
+As built; see `docs/reports/task-15d.md`.
+- `leftoff resume --details` is the brief's plain words in full: the header, `You were …`, how many things are still not right (with the agent's claim when there is one), then each open problem as a numbered block — what is wrong in words, `Error:` (unless the words already say it), `Command:`, `Files:`, `Already tried:` in words ("editing exceptions.py", "running the reset tests", "reading a.ts", "searching the code") — then `Uncommitted:`, `What changed:`, notes and `Next:`. Raw data (sources, every field) is in `--json` only; the old section-style terminal brief is gone.
+- leftoff never records or counts its own commands (`leftoff …`, the shim, `node …/leftoff/dist/cli.js`).
+- "Last worked" is the last real work: look-around commands (probes, scratch, read-only git, `cd`, `clear`, leftoff itself) after it don't move it.
+- A quote is a complete sentence or nothing: a cut claim reads "Codex said it was done, but …"; the agent's last update shows only whole sentences that fit.
+- Large briefs list up to 3 commit subjects, one per line. A topic under 3 words gets the newest commit subject. Without commits, the README's first heading — or its first sentence when the heading is just the name — says what the project is: "working on <project> (<one-liner>): mostly <folders>".
+- Long-running processes (serve, dev, start, watch, `tail -f`, servers on ports) stopped by 130/137/143 are not problems, from any source; exit 127 from your own shell is a typo. Your home folder and `/` are never projects (loose ends and the auto brief).
+- One-time, on the owner's DB: commit file lists filled in for commits inside each project's work window (backup first).
+
+---
+
 ### Task 16: End-to-end and performance tests
 
 **Files:**

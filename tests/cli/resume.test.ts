@@ -87,15 +87,15 @@ test('resume prints the narrative brief for the project of cwd (Task 15b)', asyn
   expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
 });
 
-test('resume --details prints the full brief with every list', async () => {
+test('resume --details: the same plain words, each problem as a numbered block', async () => {
   seed();
   const r = await runResume({ cwd: project, format: 'details', polish: false });
-  expect(r.output).toMatch(/^Where you left off — myapp · last active /);
+  expect(r.output).toMatch(/^myapp · last worked /);
   expect(r.output).toContain(
-    '  ✗ `python scripts/send_test_email.py` — SMTP connection refused\n    tried: changed port to 587 · disabled TLS',
+    '  1. `python scripts/send_test_email.py` — SMTP connection refused\n     Command: python scripts/send_test_email.py\n     Files: scripts/send_test_email.py\n     Already tried: ',
   );
   expect(r.output).toContain(
-    '  → Resolve: `python scripts/send_test_email.py` — SMTP connection refused',
+    '  Next: Get `python scripts/send_test_email.py` working (SMTP connection refused).',
   );
   // eslint-disable-next-line no-control-regex -- matching ANSI color codes is the point
   expect(r.output).not.toMatch(/\x1b\[/); // not a TTY in tests → no color
@@ -123,8 +123,15 @@ test('resume ingests first: a failing command in the shell log shows up in the s
   const r = await runResume({ cwd: project, format: 'terminal', polish: false });
   expect(r.output).toContain('  Next: Get `make deploy` working (exit code 2).'); // small work
   // git ran fine (installed; this folder just isn't a repo); no agent logs exist here.
-  const details = await runResume({ cwd: project, format: 'details', polish: false });
-  expect(details.output).toContain('Sources: claude –  git ✓  shell ✓  codex –');
+  const json = JSON.parse(
+    (await runResume({ cwd: project, format: 'json', polish: false })).output,
+  );
+  expect(json.facts.sources).toEqual([
+    { name: 'claude', status: 'not_found' },
+    { name: 'git', status: 'ok' },
+    { name: 'shell', status: 'ok' },
+    { name: 'codex', status: 'not_found' },
+  ]);
 });
 
 test('resume records that the brief was shown for the latest activity', async () => {
@@ -249,5 +256,5 @@ test('note appears in next resume output', async () => {
   expect(r.output).toContain('  Note: SMTP creds are in 1Password');
   expect(r.output).toContain('  Next: ask ops whether port 587 is open.');
   const details = await runResume({ cwd: project, format: 'details', polish: false });
-  expect(details.output).toContain('Notes\n  • SMTP creds are in 1Password');
+  expect(details.output).toContain('  Note: SMTP creds are in 1Password');
 });

@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { buildFacts } from '../../brief/facts.ts';
 import { factsHash } from '../../brief/hash.ts';
@@ -65,10 +66,16 @@ function quietUntilMs(root: string, repo: Repo, config: Config, now: Date): numb
   return Date.parse(last) + gap;
 }
 
+// Not projects: LEFTOFF_HOME, ignored projects, and your home folder and /
+// (owner decision after Task 15c).
 function skipped(root: string, config: Config): boolean {
   const home = paths().home;
   return (
-    root === home || root.startsWith(home + sep) || compileIgnore(config).isIgnoredProject(root)
+    root === sep ||
+    root === homedir() ||
+    root === home ||
+    root.startsWith(home + sep) ||
+    compileIgnore(config).isIgnoredProject(root)
   );
 }
 

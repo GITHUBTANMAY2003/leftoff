@@ -341,3 +341,8 @@ test('a probe failing with exit 1 is marked; the same probe with exit 127 is not
     [127, false],
   ]);
 });
+
+test("leftoff's own commands are never recorded", async () => {
+  writeFileSync(log(), line('leftoff resume--details', { exit: 1 }) + line('leftoff') + line('ls'));
+  expect((await shellCollector.collect(ctx)).events.map((e) => e.summary)).toEqual(['ls']);
+});

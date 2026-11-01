@@ -310,3 +310,26 @@ test('a topic of 3 words or more stands alone; a shorter one gets the newest com
   ).toBe('working on semantic, kb and adapters');
   expect(commits('feature/forgot-password', [])).toBe('building forgot password'); // no commit to add
 });
+
+test('no commits: the README says what the project is, then where most changes were', () => {
+  const root = '/w/quillmark';
+  const events = [
+    ev(root, '2026-10-20T10:00:00.000Z', 'user_prompt', 'I guess it is mostly done?'),
+    edit(root, '2026-10-20T10:01:00.000Z', 'docs/a.md'),
+    edit(root, '2026-10-20T10:02:00.000Z', 'docs/b.md'),
+    edit(root, '2026-10-20T10:03:00.000Z', 'tests/c.py'),
+    edit(root, '2026-10-20T10:04:00.000Z', 'main.py'),
+  ];
+  const about = 'a small local notes app';
+  expect(summarizeWork(events, { root, branch: 'main', gapMinutes: 45, about }).workingOn).toBe(
+    'working on quillmark (a small local notes app): mostly docs and tests',
+  );
+  // commits still come first
+  const withCommit = [
+    ...events,
+    ev(root, '2026-10-20T10:05:00.000Z', 'commit', 'Add sync settings page'),
+  ];
+  expect(summarizeWork(withCommit, { root, branch: 'main', gapMinutes: 45, about }).workingOn).toBe(
+    'working on: Add sync settings page',
+  );
+});

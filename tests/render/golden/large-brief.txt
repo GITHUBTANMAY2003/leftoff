@@ -1,7 +1,10 @@
 parser · last worked 14h ago · about 12.5 hours over 2 days · branch feat/m2
   You were working on parser and lexer.
   What got done
-    • 6 commits: parser design notes; subscripted callees; represent and/or expressions; lexer…
+    • 6 commits, the newest:
+        parser design notes
+        subscripted callees
+        represent and/or expressions
     • Most changes in crates/parser, crates/lexer and docs (37 files)
   Where it stopped
     • Claude said "Tasks 0–4 are complete", but the parser tests are still failing.

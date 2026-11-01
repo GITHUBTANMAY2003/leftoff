@@ -5,6 +5,8 @@ import type { CollectorName, IngestReport } from '../ingest/ingest.ts';
 import { isProbeFailure } from '../collectors/probes.ts';
 import {
   isAgentToolError,
+  isLeftoffCommand,
+  isLookAround,
   isScratchCommand,
   isStoppedLongRunning,
   referencesTempDir,
@@ -23,6 +25,7 @@ import {
 import type { Repo } from '../store/repo.ts';
 import { failureCategory, isWholeProjectRun, resolvedCategories } from './failure-words.ts';
 import { chooseNextStep } from './next-step.ts';
+import { readmeOneLiner } from './readme.ts';
 import { summarizeWork, type WorkSummary } from './work.ts';
 import { splitSessions } from './sessions.ts';
 
@@ -445,6 +448,11 @@ const isWork = (e: WorkEvent) =>
     !(e.kind === 'command_failed' && isFilteredPass(e)) &&
     !isNotAProblem(e));
 
+// Activity for "last worked": work, or a command that does more than look around.
+const isActivity = (e: WorkEvent) =>
+  isWork(e) ||
+  (e.kind === 'command' && typeof e.data.command === 'string' && !isLookAround(e.data.command));
+
 // The last request as you wrote it: pasted-content tags dropped. A summary the
 // agent wrote for itself when its context ran out is not a request.
 const NOT_A_REQUEST =
@@ -524,10 +532,14 @@ export function buildFacts(
     report: IngestReport | null;
     working: WorkingState | null;
     now: Date;
+    readme?: (root: string) => string | null; // test seam; default: the project's README
   },
 ): BriefFacts {
   const since = new Date(deps.now.getTime() - deps.config.retentionDays * DAY_MS).toISOString();
-  const events = deps.repo.eventsForProject(root, since);
+  // leftoff's own commands are left out entirely (also those stored before).
+  const events = deps.repo
+    .eventsForProject(root, since)
+    .filter((e) => typeof e.data.command !== 'string' || !isLeftoffCommand(e.data.command));
   const sessions = splitSessions(events, deps.config.sessionGapMinutes);
   // The most recent work session; with fewer than 3 events, the one before it
   // too. Sessions that only looked around don't count (Task 15b), but their
@@ -554,7 +566,11 @@ export function buildFacts(
     project: { root, name: basename(root) },
     branch: deps.working?.branch ?? null,
     lastActiveAt: events.at(-1)?.ts ?? null,
-    window: { from: window[0]?.ts ?? nowIso, to: window.at(-1)?.ts ?? nowIso },
+    // "last worked": the last real work, not a look-around after it.
+    window: {
+      from: window[0]?.ts ?? nowIso,
+      to: ([...window].reverse().find(isActivity) ?? window.at(-1))?.ts ?? nowIso,
+    },
     done: edited ? [...commits, edited] : commits,
     unfinished,
     lastIntent: lastRequest(window),
@@ -564,6 +580,7 @@ export function buildFacts(
       root,
       branch: deps.working?.branch ?? null,
       gapMinutes: deps.config.sessionGapMinutes,
+      about: (deps.readme ?? readmeOneLiner)(root),
     }),
     openProblems,
     claimedDone: detectClaimedDone(scope, openProblems, unfinished.files.length),

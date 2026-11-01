@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   isAgentToolError,
+  isLeftoffCommand,
   isScratchCommand,
   referencesTempDir,
 } from '../../src/collectors/scratch.ts';
@@ -109,4 +110,19 @@ test.each([
   ['1 failed, 4 passed', false],
 ])('isAgentToolError(%j) → %s', (text, expected) => {
   expect(isAgentToolError(text)).toBe(expected);
+});
+
+// leftoff never records its own commands (dogfooding after 15c)
+test.each([
+  ['leftoff resume--details', true],
+  ['leftoff', true],
+  ['npx leftoff resume', true],
+  ['/home/u/.leftoff/bin/leftoff brief --auto', true],
+  ['node ~/src/leftoff/dist/cli.js resume', true],
+  ['cd ~/app && leftoff resume --json | jq .', true],
+  ['node dist/server.js', false],
+  ['npm test', false],
+  ['echo leftoff', false],
+])('isLeftoffCommand(%j) → %s', (command, expected) => {
+  expect(isLeftoffCommand(command)).toBe(expected);
 });

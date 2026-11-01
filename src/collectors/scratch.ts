@@ -1,5 +1,11 @@
 import { basename } from 'node:path';
-import { chainSteps, normalizeCommand, pipelineHead, programWords } from '../model/event.ts';
+import {
+  chainSteps,
+  displayCommand,
+  normalizeCommand,
+  pipelineHead,
+  programWords,
+} from '../model/event.ts';
 import { isProbeCommand } from './probes.ts';
 
 // Scratch work (owner decision after Task 13): one-off commands an agent runs
@@ -128,4 +134,28 @@ export function isLongRunning(command: string): boolean {
 
 export function isStoppedLongRunning(command: string, exitCode: number): boolean {
   return STOP_SIGNALS.has(exitCode) && isLongRunning(command);
+}
+
+// leftoff's own commands (dogfooding after Task 15c): `leftoff …`, the shim,
+// or the built CLI run with node. Never recorded, never a problem or activity.
+export function isLeftoffCommand(command: string): boolean {
+  return chainSteps(displayCommand(command)).some((step) => {
+    const [program = '', script = ''] = programWords(step) ?? normalizeCommand(step).split(' ');
+    if (basename(program) === 'leftoff') return true;
+    return /^node(js)?$/.test(basename(program)) && /(^|\/)leftoff\/dist\/cli\.js$/.test(script);
+  });
+}
+
+// Commands that only look around (dogfooding after Task 15c): they don't make
+// a project "last worked on". Probes, scratch, and read-only git and shell.
+const LOOK_AROUND =
+  /^(git (status|log|show|diff|branch|remote|fetch|stash list|blame|reflog)|clear|cd|pushd|popd|history|exit|man|tldr|open|code|cursor|z)(\s|$)/;
+export function isLookAround(command: string): boolean {
+  const shown = displayCommand(command);
+  return (
+    isLeftoffCommand(command) ||
+    isProbeCommand(shown) ||
+    isScratchCommand(command) ||
+    LOOK_AROUND.test(shown)
+  );
 }
